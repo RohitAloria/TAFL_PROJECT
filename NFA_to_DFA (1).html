@@ -1,0 +1,2388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NFA → DFA Converter</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Unbounded:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #03050a;
+    --panel: rgba(13, 14, 26, 0.4);
+    --panel-blur: blur(20px);
+    --border: rgba(45, 48, 71, 0.5);
+    --border-hl: rgba(0, 229, 255, 0.3);
+    --border-hl2: rgba(157, 0, 255, 0.3);
+    --accent: #00e5ff;
+    --accent2: #b05bff;
+    --accent3: #ff2a85;
+    --green: #20f5a3; /* Final State Green */
+    --amber: #f8e71c; /* Initial State Yellow (more bright) */
+    --text: #f0f4ff;
+    --muted: #6e7698;
+    --mono: 'JetBrains Mono', monospace;
+    --display: 'Unbounded', sans-serif;
+    --grad-bg: radial-gradient(circle at 15% 30%, rgba(176, 91, 255, 0.1) 0%, transparent 40%),
+               radial-gradient(circle at 85% 70%, rgba(0, 229, 255, 0.1) 0%, transparent 40%);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--mono);
+    background: var(--bg);
+    background-image: var(--grad-bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    backdrop-filter: var(--panel-blur);
+    -webkit-backdrop-filter: var(--panel-blur);
+    flex-shrink: 0;
+    z-index: 20;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  }
+
+  .logo {
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--accent);
+  }
+
+  .steps-nav { display: flex; align-items: center; }
+
+  .step-dot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 16px;
+    transition: color 0.3s;
+    position: relative;
+  }
+
+  .step-dot:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    width: 1px; height: 14px;
+    background: var(--border);
+  }
+
+  .step-dot .num {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px;
+    transition: all 0.3s;
+    flex-shrink: 0;
+  }
+
+  .step-dot.active { color: var(--accent); }
+  .step-dot.active .num { border-color: var(--accent); background: rgba(0,229,255,0.1); color: var(--accent); box-shadow: 0 0 10px rgba(0,229,255,0.3); }
+  .step-dot.done { color: var(--green); }
+  .step-dot.done .num { border-color: var(--green); background: rgba(0,255,170,0.1); color: var(--green); }
+
+  .main {
+    display: grid;
+    grid-template-columns: 2fr 3fr;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .left {
+    background: var(--panel);
+    backdrop-filter: var(--panel-blur);
+    -webkit-backdrop-filter: var(--panel-blur);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 10;
+  }
+
+  .step-area { flex: 1; overflow-y: auto; padding: 36px 32px; }
+  .step-area::-webkit-scrollbar { width: 4px; }
+  .step-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .step-block { display: none; animation: slideIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .step-block.active { display: block; }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .step-num-label { font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+
+  .step-question { font-family: var(--display); font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.3; margin-bottom: 6px; }
+
+  .step-desc { font-size: 11px; color: var(--muted); line-height: 1.7; margin-bottom: 28px; }
+
+  .step-desc code { background: rgba(0,229,255,0.1); color: var(--accent); padding: 1px 5px; border-radius: 3px; font-size: 10px; }
+
+  .input-row { display: flex; gap: 10px; align-items: stretch; }
+
+  .big-input {
+    flex: 1;
+    background: rgba(10, 11, 20, 0.4);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    outline: none;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    caret-color: var(--accent);
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  .big-input:focus { border-color: var(--border-hl); box-shadow: inset 0 2px 8px rgba(0,0,0,0.2), 0 0 0 3px rgba(0,229,255,0.15); transform: translateY(-1px); background: rgba(10, 11, 20, 0.6); }
+  .big-input::placeholder { color: var(--muted); }
+
+  .add-btn {
+    background: linear-gradient(135deg, var(--accent), #00b8d9);
+    border: none;
+    border-radius: 10px;
+    color: #000;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 0 20px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(0, 229, 255, 0.2);
+  }
+
+  .add-btn:hover { background: linear-gradient(135deg, #33eeff, #00d2ff); transform: translateY(-2px) scale(1.02); box-shadow: 0 6px 20px rgba(0, 229, 255, 0.35); }
+  .add-btn:active { transform: translateY(0) scale(0.98); box-shadow: 0 2px 8px rgba(0, 229, 255, 0.2); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; min-height: 36px; }
+
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,229,255,0.08);
+    border: 1px solid rgba(0,229,255,0.2);
+    color: var(--accent);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    animation: popIn 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  .chip.symbol { background: rgba(123,97,255,0.1); border-color: rgba(123,97,255,0.3); color: var(--accent2); }
+
+  .chip .del { cursor: pointer; opacity: 0.5; font-size: 14px; line-height: 1; transition: opacity 0.15s; }
+  .chip .del:hover { opacity: 1; }
+
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.7); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  .ttable-wrap { overflow-x: auto; margin-top: 4px; border-radius: 10px; border: 1px solid var(--border); }
+  .ttable { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .ttable th { background: rgba(0,229,255,0.05); color: var(--muted); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: center; }
+  .ttable td { padding: 7px 8px; border-bottom: 1px solid rgba(30,32,53,0.7); text-align: center; }
+  .ttable tr:last-child td { border-bottom: none; }
+  .ttable .state-cell { color: var(--accent); font-weight: 600; font-size: 12px; white-space: nowrap; }
+  .ttable input { width: 80px; background: rgba(10,11,20,0.8); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; color: var(--text); font-family: var(--mono); font-size: 11px; text-align: center; outline: none; transition: border-color 0.2s; }
+  .ttable input:focus { border-color: var(--accent2); box-shadow: 0 0 0 2px rgba(123,97,255,0.15); }
+
+  .state-select-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; margin-top: 4px; }
+
+  .state-pick {
+    background: rgba(10, 11, 20, 0.5);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 8px;
+    text-align: center;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--muted);
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    user-select: none;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .state-pick:hover { border-color: var(--text); color: var(--text); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+  .state-pick.selected-start { border-color: var(--amber); color: var(--amber); background: rgba(255,179,71,0.1); box-shadow: 0 0 16px rgba(255,179,71,0.2), inset 0 0 8px rgba(255,179,71,0.1); transform: translateY(-1px); }
+  .state-pick.selected-accept { border-color: var(--green); color: var(--green); background: rgba(0,255,170,0.1); box-shadow: 0 0 16px rgba(0,255,170,0.2), inset 0 0 8px rgba(0,255,170,0.1); transform: translateY(-1px); }
+
+  .nav-bar { padding: 20px 32px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; background: rgba(13,14,26,0.3); backdrop-filter: var(--panel-blur); }
+
+  .nav-back { background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 8px; color: var(--muted); font-family: var(--mono); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; padding: 10px 18px; cursor: pointer; transition: all 0.3s; }
+  .nav-back:hover { color: var(--text); border-color: var(--muted); background: rgba(255,255,255,0.08); transform: translateX(-2px); }
+
+  .nav-next { background: linear-gradient(135deg, var(--accent2), #cd5aff); border: none; border-radius: 8px; color: #fff; font-family: var(--mono); font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; padding: 10px 24px; cursor: pointer; transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); box-shadow: 0 4px 20px rgba(176, 91, 255, 0.3); }
+  .nav-next:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 6px 28px rgba(176, 91, 255, 0.5); }
+  .nav-next:active { transform: translateY(0) scale(0.98); }
+
+  .progress-line { height: 2px; background: var(--border); flex-shrink: 0; position: relative; z-index: 20; }
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 16px var(--accent); border-radius: 0 2px 2px 0; }
+
+  .right { background: transparent; overflow: hidden; position: relative; display: flex; flex-direction: column; z-index: 1; }
+
+  .right-header { padding: 20px 32px 16px; border-bottom: 1px solid var(--border); font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); flex-shrink: 0; display: flex; align-items: center; gap: 10px; background: rgba(3,5,10,0.5); backdrop-filter: var(--panel-blur); z-index: 10; }
+
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.5s infinite; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .preview-canvas { flex: 1; overflow: hidden; position: relative; }
+  canvas#preview { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .empty-state { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; color: var(--muted); font-size: 12px; letter-spacing: 1px; text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+  .empty-icon { font-size: 48px; opacity: 0.15; filter: drop-shadow(0 0 20px rgba(0,229,255,0.2)); }
+
+  .info-panel { border-top: 1px solid var(--border); padding: 16px 32px; display: flex; gap: 24px; flex-wrap: wrap; flex-shrink: 0; background: rgba(13,14,26,0.3); backdrop-filter: var(--panel-blur); z-index: 10; }
+  .info-item { display: flex; flex-direction: column; gap: 4px; }
+  .info-lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+  .info-val { font-size: 12px; color: var(--text); display: flex; gap: 4px; flex-wrap: wrap; }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+  .tag-cyan   { background: rgba(0,229,255,0.1);  color: var(--accent);  border: 1px solid rgba(0,229,255,0.2); }
+  .tag-purple { background: rgba(123,97,255,0.1); color: var(--accent2); border: 1px solid rgba(123,97,255,0.2); }
+  .tag-amber  { background: rgba(255,179,71,0.1); color: var(--amber);   border: 1px solid rgba(255,179,71,0.2); }
+  .tag-green  { background: rgba(0,255,170,0.08); color: var(--green);   border: 1px solid rgba(0,255,170,0.2); }
+
+  .trans-preview { padding: 16px 32px; overflow-y: auto; max-height: 180px; }
+  .trans-preview::-webkit-scrollbar { width: 4px; }
+  .trans-preview::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .trans-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 11px; border-bottom: 1px solid rgba(30,32,53,0.5); animation: fadeRow 0.3s ease; }
+
+  @keyframes fadeRow { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+
+  .trans-row:last-child { border-bottom: none; }
+  .t-from { color: var(--accent); min-width: 32px; }
+  .t-sym   { color: var(--accent2); background: rgba(123,97,255,0.1); padding: 1px 6px; border-radius: 4px; min-width: 24px; text-align: center; }
+  .t-arrow { color: var(--muted); }
+  .t-to    { color: var(--green); }
+
+  .eps-list  { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .eps-entry { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .eps-arrow { color: var(--muted); }
+  .eps-del   { cursor: pointer; color: var(--muted); font-size: 16px; transition: color 0.15s; }
+  .eps-del:hover { color: var(--accent3); }
+
+  .dfa-page {
+    display: none;
+    grid-template-columns: 2fr 3fr;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .dfa-left {
+    background: var(--panel);
+    backdrop-filter: var(--panel-blur);
+    -webkit-backdrop-filter: var(--panel-blur);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 10;
+  }
+
+  .dfa-left-header {
+    padding: 20px 28px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(13,14,26,0.2);
+  }
+
+  .dfa-scroll { flex: 1; overflow-y: auto; padding: 20px 28px; }
+  .dfa-scroll::-webkit-scrollbar { width: 4px; }
+  .dfa-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .dfa-section-title {
+    font-size: 9px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    margin-top: 20px;
+  }
+
+  .dfa-section-title:first-child { margin-top: 0; }
+
+  .dfa-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+
+  .dfa-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+  .dfa-table th {
+    background: rgba(123,97,255,0.08);
+    color: var(--accent2);
+    font-size: 10px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .dfa-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(30,32,53,0.6);
+    text-align: center;
+    color: var(--text);
+    font-size: 12px;
+  }
+
+  .dfa-table tr:last-child td { border-bottom: none; }
+  .dfa-table tr:hover td { background: rgba(123,97,255,0.05); }
+
+  .dfa-table .start-row td { color: var(--amber); }
+  .dfa-table .accept-row td { color: var(--green); }
+  .dfa-table .dead-row td { color: var(--muted); font-style: italic; }
+
+  .dfa-right {
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .dfa-right-header {
+    padding: 20px 32px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--muted);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(3,5,10,0.5);
+    backdrop-filter: var(--panel-blur);
+    z-index: 10;
+  }
+
+  .dfa-canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+  canvas#dfa-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .back-btn {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 7px 16px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  .back-btn:hover { color: var(--text); border-color: var(--muted); background: rgba(255,255,255,0.08); transform: translateY(-1px); }
+  .back-btn:active { transform: translateY(0); }
+
+  .dfa-popup-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.65);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+    animation: fadeOverlay 0.4s ease;
+  }
+
+  @keyframes fadeOverlay {
+    from { opacity: 0; backdrop-filter: blur(0px); }
+    to   { opacity: 1; backdrop-filter: blur(8px); }
+  }
+
+  .dfa-popup {
+    background: rgba(13, 14, 26, 0.85);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--border-hl2);
+    border-radius: 20px;
+    padding: 40px 48px;
+    text-align: center;
+    box-shadow: 0 20px 80px rgba(0,0,0,0.6), inset 0 0 40px rgba(157, 0, 255, 0.1);
+    animation: popupIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    max-width: 400px;
+  }
+
+  @keyframes popupIn {
+    from { opacity: 0; transform: scale(0.85) translateY(20px); filter: blur(5px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+  }
+
+  .dfa-popup-icon {
+    font-size: 56px;
+    margin-bottom: 16px;
+    filter: drop-shadow(0 0 15px rgba(32, 245, 163, 0.4));
+  }
+
+  .dfa-popup-title {
+    font-family: var(--display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--green);
+    margin-bottom: 12px;
+    letter-spacing: -0.5px;
+    text-shadow: 0 0 20px rgba(32, 245, 163, 0.2);
+  }
+
+  .dfa-popup-sub {
+    font-size: 13px;
+    color: #aeb5cc;
+    line-height: 1.7;
+    margin-bottom: 28px;
+  }
+
+  .dfa-popup-btn {
+    background: linear-gradient(135deg, var(--accent2), #5b21b6);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 12px 32px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 4px 20px rgba(157, 0, 255, 0.35);
+  }
+
+  .dfa-popup-btn:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 8px 30px rgba(157, 0, 255, 0.55); }
+  .dfa-popup-btn:active { transform: translateY(0) scale(0.98); }
+
+  .error-msg { color: var(--accent3); font-size: 11px; margin-top: 8px; display: none; }
+  .error-msg.show { display: block; }
+
+  /* Regex Section */
+  .regex-section {
+    margin-top: 24px;
+    padding: 18px;
+    background: rgba(0,229,255,0.04);
+    border: 1px solid rgba(0,229,255,0.18);
+    border-radius: 12px;
+    animation: fadeIn 0.5s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .regex-section-title {
+    font-size: 9px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .regex-section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(0,229,255,0.15);
+  }
+
+  .regex-box {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border-hl);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--accent);
+    word-break: break-all;
+    line-height: 1.7;
+    letter-spacing: 0.5px;
+    position: relative;
+    min-height: 48px;
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.3), 0 0 20px rgba(0,229,255,0.05);
+    transition: all 0.3s;
+  }
+
+  .regex-box:hover { box-shadow: inset 0 2px 10px rgba(0,0,0,0.3), 0 0 25px rgba(0,229,255,0.1); }
+
+  .regex-copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0,229,255,0.1);
+    border: 1px solid rgba(0,229,255,0.2);
+    border-radius: 5px;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .regex-copy-btn:hover { background: rgba(0,229,255,0.2); }
+
+  .regex-label {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+  }
+
+  .regex-step-list {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+
+  .regex-step-list::-webkit-scrollbar { width: 3px; }
+  .regex-step-list::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .regex-step-item {
+    font-size: 10px;
+    color: var(--muted);
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(30,32,53,0.5);
+    line-height: 1.8;
+  }
+
+  /* Dual Table & Step Logic Styles */
+  .nfa-ref-wrap { margin-bottom: 24px; border-radius: 10px; border: 1px solid rgba(0,229,255,0.15); background: rgba(0,0,0,0.2); overflow: hidden; }
+  .nfa-ref-table { width: 100%; border-collapse: collapse; font-size: 10px; table-layout: fixed; }
+  .nfa-ref-table th { background: rgba(0,229,255,0.05); color: var(--muted); padding: 8px; border-bottom: 1px solid var(--border); font-size: 8px; letter-spacing: 1px; }
+  .nfa-ref-table td { padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.02); text-align: center; color: var(--text); }
+  .nfa-ref-table .state-col { width: 60px; color: var(--accent); font-weight: 700; background: rgba(0,229,255,0.02); }
+  
+  .highlight-row { background: rgba(0,229,255,0.15) !important; color: #fff !important; }
+  .highlight-cell { background: rgba(123,97,255,0.3) !important; box-shadow: inset 0 0 10px rgba(123,97,255,0.5); font-weight: 700; }
+
+  .calc-box { margin-top: 16px; padding: 14px; background: rgba(123,97,255,0.08); border: 1px solid rgba(123,97,255,0.2); border-radius: 8px; font-size: 11px; line-height: 1.6; animation: fadeIn 0.3s ease; }
+  .calc-title { font-size: 8px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent2); margin-bottom: 6px; }
+  .calc-math { font-family: var(--mono); color: var(--text); }
+  .calc-res  { color: var(--accent); font-weight: 700; margin-top: 4px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 4px; }
+  
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Superscript formatting */
+  sup { font-size: 0.6em; vertical-align: top; color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">NFA → DFA Converter</div>
+  <div class="steps-nav">
+    <div class="step-dot active" id="nav0"><div class="num">1</div> States</div>
+    <div class="step-dot" id="nav1"><div class="num">2</div> Alphabet</div>
+    <div class="step-dot" id="nav2"><div class="num">3</div> Start</div>
+    <div class="step-dot" id="nav3"><div class="num">4</div> Accept</div>
+    <div class="step-dot" id="nav4"><div class="num">5</div> ε Transitions</div>
+    <div class="step-dot" id="nav5"><div class="num">6</div> Transitions</div>
+  </div>
+  <div style="font-size:10px;color:var(--muted);letter-spacing:1px;">STEP <span id="step-counter">1</span> / 6</div>
+</div>
+
+<div class="progress-line">
+  <div class="progress-fill" id="progress" style="width:16.6%"></div>
+</div>
+
+<div class="main">
+  <div class="left">
+    <div class="step-area">
+
+      <div class="step-block active" id="step0">
+        <div class="step-num-label">Step 01</div>
+        <div class="step-question">How many states?</div>
+        <div class="step-desc">Enter the number of states. They will be named automatically as <code>q0</code>, <code>q1</code>, … <code>qn</code>.</div>
+        <div class="input-row">
+          <input class="big-input" id="state-count-input" type="number" min="1" max="20" placeholder="e.g. 3" autocomplete="off">
+          <button class="add-btn" onclick="generateStates()">Generate</button>
+        </div>
+        <div class="error-msg" id="err-states">Please enter at least 1 state.</div>
+        <div class="chips" id="state-chips"></div>
+      </div>
+
+      <div class="step-block" id="step1">
+        <div class="step-num-label">Step 02</div>
+        <div class="step-question">Define the alphabet</div>
+        <div class="step-desc">Type all symbols separated by commas. Do not include <code>ε</code> here. Press <code>Enter</code> or click away to confirm.</div>
+        <input class="big-input" id="symbol-input" placeholder="e.g. a, b, c" autocomplete="off" style="width:100%;">
+        <div class="error-msg" id="err-alpha">Please add at least 1 symbol.</div>
+        <div class="chips" id="symbol-chips" style="margin-top:14px;"></div>
+      </div>
+
+      <div class="step-block" id="step2">
+        <div class="step-num-label">Step 03</div>
+        <div class="step-question">Choose the start state</div>
+        <div class="step-desc">Select exactly one state as the initial state.</div>
+        <div class="state-select-grid" id="start-grid"></div>
+        <div class="error-msg" id="err-start">Please select a start state.</div>
+      </div>
+
+      <div class="step-block" id="step3">
+        <div class="step-num-label">Step 04</div>
+        <div class="step-question">Choose accept states</div>
+        <div class="step-desc">Select one or more final/accepting states.</div>
+        <div class="state-select-grid" id="accept-grid"></div>
+        <div class="error-msg" id="err-accept">Please select at least 1 accept state.</div>
+      </div>
+
+      <div class="step-block" id="step4">
+        <div class="step-num-label">Step 05</div>
+        <div class="step-question">Epsilon (ε) transitions</div>
+        <div class="step-desc">Optional. Skip if your NFA has no ε-transitions.</div>
+        <button class="add-btn" style="margin-bottom:12px;" onclick="addEpsRow()">+ Add ε Transition</button>
+        <div class="eps-list" id="eps-list"></div>
+      </div>
+
+      <div class="step-block" id="step5">
+        <div class="step-num-label">Step 06</div>
+        <div class="step-question">Fill the transition table</div>
+        <div class="step-desc">Enter comma-separated next states for each cell. Leave empty for ∅.</div>
+        <div class="ttable-wrap">
+          <table class="ttable">
+            <thead id="trans-thead"></thead>
+            <tbody id="trans-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="nav-bar">
+      <button class="nav-back" id="btn-back" onclick="goBack()" style="visibility:hidden">← Back</button>
+      <button class="nav-next" id="btn-next" onclick="goNext()">Continue →</button>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="right-header">
+      <div class="live-dot"></div>
+      Live NFA Preview
+    </div>
+    <div class="preview-canvas">
+      <canvas id="preview"></canvas>
+      <div class="empty-state" id="empty-msg">
+        <div class="empty-icon">◎</div>
+        <div>Add states to see the diagram</div>
+      </div>
+    </div>
+    <div class="info-panel">
+      <div class="info-item"><div class="info-lbl">States</div><div class="info-val" id="info-states"><span style="color:var(--muted)">—</span></div></div>
+      <div class="info-item"><div class="info-lbl">Alphabet</div><div class="info-val" id="info-alpha"><span style="color:var(--muted)">—</span></div></div>
+      <div class="info-item"><div class="info-lbl">Start</div><div class="info-val" id="info-start"><span style="color:var(--muted)">—</span></div></div>
+      <div class="info-item"><div class="info-lbl">Accept</div><div class="info-val" id="info-accept"><span style="color:var(--muted)">—</span></div></div>
+    </div>
+    <div class="trans-preview" id="trans-preview" style="display:none;"></div>
+  </div>
+</div>
+
+<!-- DFA Result Page -->
+<div class="dfa-page main" id="dfa-page" style="display:none;">
+
+  <!-- Left: Table + Legend -->
+  <div class="dfa-left">
+    <div class="dfa-left-header">
+      <div class="live-dot" style="background:var(--accent2);box-shadow:0 0 8px var(--accent2);"></div>
+      <span id="dfa-topbar-label">DFA Result</span>
+      <span id="dfa-step-label" style="margin-left:auto;font-size:9px;letter-spacing:1px;color:var(--accent2);display:none;"></span>
+    </div>
+    <div class="dfa-scroll">
+
+      <div class="dfa-section-title">NFA Reference (Source)</div>
+      <div class="nfa-ref-wrap">
+        <table class="nfa-ref-table">
+          <thead id="nfa-ref-thead"></thead>
+          <tbody id="nfa-ref-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="dfa-section-title">Step Logic</div>
+      <div id="calc-step-info" class="calc-box" style="display:none;">
+        <div class="calc-title">Transition Calculation</div>
+        <div id="calc-math-box" class="calc-math"></div>
+        <div id="calc-result-box" class="calc-res"></div>
+      </div>
+
+      <div class="dfa-section-title" style="margin-top:24px;">DFA Transition Table</div>
+      <div class="dfa-table-wrap">
+        <table class="dfa-table">
+          <thead id="dfa-thead"></thead>
+          <tbody id="dfa-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="dfa-section-title" style="margin-top:24px;">State Mapping</div>
+      <div id="dfa-legend" style="font-size:12px;"></div>
+
+      <div style="margin-top:20px;padding:14px;background:rgba(123,97,255,0.06);border:1px solid rgba(123,97,255,0.2);border-radius:8px;font-size:10px;line-height:1.9;color:var(--muted);">
+        <div style="color:var(--accent2);margin-bottom:4px;letter-spacing:1px;font-size:9px;text-transform:uppercase;">Legend</div>
+        <div><span style="color:var(--amber);">→ D0</span> &nbsp; Start state</div>
+        <div><span style="color:var(--green);">D* *</span> &nbsp; Accept state</div>
+        <div><span style="color:var(--muted);font-style:italic;">∅</span> &nbsp;&nbsp;&nbsp; Dead / trap state</div>
+      </div>
+
+      <!-- Regular Expression Section -->
+      <div class="regex-section" id="regex-section" style="display:none;">
+        <div class="regex-section-title">Regular Expression</div>
+        <div class="regex-label">Equivalent RE for the DFA language:</div>
+        <div class="regex-box" id="regex-output">
+          <button class="regex-copy-btn" onclick="copyRegex()">Copy</button>
+          <span id="regex-text" style="padding-right:48px;display:inline-block;"></span>
+        </div>
+        <div class="regex-step-list" id="regex-steps"></div>
+      </div>
+
+      <!-- Mini NFA Preview for Merging Animation -->
+      <div class="dfa-section-title" id="merging-nfa-title" style="margin-top:24px;display:none;">Merging from NFA</div>
+      <div id="mini-nfa-container" style="display:none; height: 180px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 10px; position: relative; overflow: hidden; margin-top: 10px;">
+        <canvas id="mini-nfa"></canvas>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Right: DFA Diagram -->
+  <div class="dfa-right">
+    <div class="dfa-right-header">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="live-dot" style="background:var(--accent2);box-shadow:0 0 8px var(--accent2);"></div>
+        DFA Diagram
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="back-btn" id="anim-prev-btn" onclick="animStepPrev()" style="display:none;">◀ Prev</button>
+        <button class="back-btn" id="anim-next-btn" onclick="animStepNext()" style="display:none;">Next ▶</button>
+        <button class="back-btn" id="anim-auto-btn" onclick="animToggleAuto()" style="display:none;">▶ Auto Play</button>
+        <button class="back-btn" id="anim-restart-btn" onclick="animRestart()" style="display:none;">↺ Restart</button>
+        <button class="back-btn" onclick="goBackToNFA()">← Edit NFA</button>
+      </div>
+    </div>
+    <div class="dfa-canvas-wrap">
+      <canvas id="dfa-canvas"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Global canvas center (for outward self-loops) ─────────────────────────────
+let _cx = 500, _cy = 300;
+
+const nfa = { states: [], alphabet: [], start: null, accept: [], epsilon: [], trans: {} };
+let currentStep = 0;
+const TOTAL = 6;
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function goNext() {
+  if (!validate(currentStep)) return;
+  if (currentStep < TOTAL - 1) { currentStep++; renderStep(); } else finalize();
+}
+
+function goBack() {
+  if (currentStep > 0) { currentStep--; renderStep(); }
+}
+
+function renderStep() {
+  document.querySelectorAll('.step-block').forEach((b, i) => b.classList.toggle('active', i === currentStep));
+  document.querySelectorAll('.step-dot').forEach((d, i) => {
+    d.classList.toggle('active', i === currentStep);
+    d.classList.toggle('done', i < currentStep);
+  });
+  document.getElementById('step-counter').textContent = currentStep + 1;
+  document.getElementById('progress').style.width = `${((currentStep + 1) / TOTAL) * 100}%`;
+  document.getElementById('btn-back').style.visibility = currentStep === 0 ? 'hidden' : 'visible';
+  document.getElementById('btn-next').textContent = currentStep === TOTAL - 1 ? '⚡ Convert to DFA' : 'Continue →';
+  if (currentStep === 2) buildStartGrid();
+  if (currentStep === 3) buildAcceptGrid();
+  if (currentStep === 5) buildTransTable();
+  document.getElementById('trans-preview').style.display = currentStep === 5 ? 'block' : 'none';
+}
+
+// ── Validation ────────────────────────────────────────────────────────────────
+function validate(step) {
+  if (step === 0) { const ok = nfa.states.length > 0; document.getElementById('err-states').classList.toggle('show', !ok); return ok; }
+  if (step === 1) { const ok = nfa.alphabet.length > 0; document.getElementById('err-alpha').classList.toggle('show', !ok); return ok; }
+  if (step === 2) { const ok = !!nfa.start; document.getElementById('err-start').classList.toggle('show', !ok); return ok; }
+  if (step === 3) { const ok = nfa.accept.length > 0; document.getElementById('err-accept').classList.toggle('show', !ok); return ok; }
+  return true;
+}
+
+// ── States ────────────────────────────────────────────────────────────────────
+document.getElementById('state-count-input').addEventListener('keydown', e => { if (e.key === 'Enter') generateStates(); });
+
+function generateStates() {
+  const inp = document.getElementById('state-count-input');
+  const n = parseInt(inp.value);
+  if (!n || n < 1) return;
+  // Reset states
+  nfa.states = [];
+  nfa.trans = {};
+  nfa.start = null;
+  nfa.accept = [];
+  for (let i = 0; i < n; i++) {
+    const name = 'q' + i;
+    nfa.states.push(name);
+    nfa.trans[name] = {};
+  }
+  renderStateChips(); drawPreview(); updateInfoPanel();
+}
+
+function removeState(s) {
+  nfa.states = nfa.states.filter(x => x !== s);
+  delete nfa.trans[s];
+  if (nfa.start === s) nfa.start = null;
+  nfa.accept = nfa.accept.filter(x => x !== s);
+  renderStateChips(); drawPreview(); updateInfoPanel();
+}
+
+function renderStateChips() {
+  document.getElementById('state-chips').innerHTML = nfa.states.map(s =>
+    `<div class="chip">${s}</div>`).join('');
+}
+
+// ── Alphabet ──────────────────────────────────────────────────────────────────
+function parseAlphabetInput() {
+  const inp = document.getElementById('symbol-input');
+  const parts = inp.value.split(',').map(s => s.trim()).filter(s => s && s !== 'ε');
+  const unique = [...new Set(parts)];
+  nfa.alphabet = unique;
+  renderSymbolChips(); updateInfoPanel();
+}
+
+document.getElementById('symbol-input').addEventListener('input', parseAlphabetInput);
+document.getElementById('symbol-input').addEventListener('blur', parseAlphabetInput);
+document.getElementById('symbol-input').addEventListener('keydown', e => { if (e.key === 'Enter') parseAlphabetInput(); });
+
+function removeSymbol(a) {
+  nfa.alphabet = nfa.alphabet.filter(x => x !== a);
+  // Update input field to reflect removal
+  document.getElementById('symbol-input').value = nfa.alphabet.join(', ');
+  renderSymbolChips(); updateInfoPanel();
+}
+
+function renderSymbolChips() {
+  document.getElementById('symbol-chips').innerHTML = nfa.alphabet.map(a =>
+    `<div class="chip symbol">${a}<span class="del" onclick="removeSymbol('${a}')">×</span></div>`).join('');
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+function buildStartGrid() {
+  document.getElementById('start-grid').innerHTML = nfa.states.map(s =>
+    `<div class="state-pick ${nfa.start===s?'selected-start':''}" onclick="selectStart('${s}')">${s}</div>`).join('');
+}
+
+function selectStart(s) { nfa.start = s; buildStartGrid(); drawPreview(); updateInfoPanel(); }
+
+// ── Accept ────────────────────────────────────────────────────────────────────
+function buildAcceptGrid() {
+  document.getElementById('accept-grid').innerHTML = nfa.states.map(s =>
+    `<div class="state-pick ${nfa.accept.includes(s)?'selected-accept':''}" onclick="toggleAccept('${s}')">${s}</div>`).join('');
+}
+
+function toggleAccept(s) {
+  if (nfa.accept.includes(s)) nfa.accept = nfa.accept.filter(x => x !== s);
+  else nfa.accept.push(s);
+  buildAcceptGrid(); drawPreview(); updateInfoPanel();
+}
+
+// ── Epsilon ───────────────────────────────────────────────────────────────────
+function addEpsRow() { nfa.epsilon.push({ from: '', to: '' }); renderEpsList(); }
+
+function renderEpsList() {
+  document.getElementById('eps-list').innerHTML = nfa.epsilon.map((e, i) => `
+    <div class="eps-entry">
+      <select class="big-input" onchange="updateEps(${i},'from',this.value)" style="flex:none;width:90px;padding:7px 10px;font-size:12px;border-radius:6px;">
+        <option value="">From</option>
+        ${nfa.states.map(s => `<option value="${s}" ${e.from===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+      <span class="eps-arrow">──ε──▶</span>
+      <select class="big-input" onchange="updateEps(${i},'to',this.value)" style="flex:none;width:90px;padding:7px 10px;font-size:12px;border-radius:6px;">
+        <option value="">To</option>
+        ${nfa.states.map(s => `<option value="${s}" ${e.to===s?'selected':''}>${s}</option>`).join('')}
+      </select>
+      <span class="eps-del" onclick="removeEps(${i})">×</span>
+    </div>`).join('');
+}
+
+function updateEps(i, key, val) { nfa.epsilon[i][key] = val; drawPreview(); }
+
+function removeEps(i) { nfa.epsilon.splice(i, 1); renderEpsList(); drawPreview(); }
+
+// ── Transition table ──────────────────────────────────────────────────────────
+function buildTransTable() {
+  let hdr = '<tr><th>State</th>';
+  nfa.alphabet.forEach(a => hdr += `<th>${a}</th>`);
+  document.getElementById('trans-thead').innerHTML = hdr + '</tr>';
+  document.getElementById('trans-tbody').innerHTML = '';
+  nfa.states.forEach(st => {
+    if (!nfa.trans[st]) nfa.trans[st] = {};
+    let row = `<tr><td class="state-cell">${st}</td>`;
+    nfa.alphabet.forEach(al => {
+      row += `<td><input type="text" value="${nfa.trans[st][al]||''}" placeholder="∅" oninput="updateTrans('${st}','${al}',this.value)"></td>`;
+    });
+    document.getElementById('trans-tbody').innerHTML += row + '</tr>';
+  });
+}
+
+function updateTrans(st, al, val) {
+  if (!nfa.trans[st]) nfa.trans[st] = {};
+  nfa.trans[st][al] = val.trim();
+  renderTransPreview(); drawPreview();
+}
+
+function renderTransPreview() {
+  let html = '';
+  nfa.states.forEach(st => {
+    nfa.alphabet.forEach(al => {
+      const val = nfa.trans[st]?.[al];
+      if (val) html += `<div class="trans-row"><span class="t-from">${st}</span><span class="t-sym">${al}</span><span class="t-arrow">──▶</span><span class="t-to">{${val}}</span></div>`;
+    });
+  });
+  nfa.epsilon.forEach(e => {
+    if (e.from && e.to) html += `<div class="trans-row"><span class="t-from">${e.from}</span><span class="t-sym" style="color:var(--green)">ε</span><span class="t-arrow">──▶</span><span class="t-to">{${e.to}}</span></div>`;
+  });
+  document.getElementById('trans-preview').innerHTML = html || `<div style="color:var(--muted);font-size:11px;padding:8px 0;">No transitions defined yet.</div>`;
+}
+
+// ── Info panel ────────────────────────────────────────────────────────────────
+function updateInfoPanel() {
+  document.getElementById('info-states').innerHTML = nfa.states.length ? nfa.states.map(s=>`<span class="tag tag-cyan">${s}</span>`).join('') : '<span style="color:var(--muted)">—</span>';
+  document.getElementById('info-alpha').innerHTML  = nfa.alphabet.length ? nfa.alphabet.map(a=>`<span class="tag tag-purple">${a}</span>`).join('') : '<span style="color:var(--muted)">—</span>';
+  document.getElementById('info-start').innerHTML  = nfa.start ? `<span class="tag tag-amber">→ ${nfa.start}</span>` : '<span style="color:var(--muted)">—</span>';
+  document.getElementById('info-accept').innerHTML = nfa.accept.length ? nfa.accept.map(s=>`<span class="tag tag-green">${s} *</span>`).join('') : '<span style="color:var(--muted)">—</span>';
+}
+
+// ── NFA preview animation tracking ───────────────────────────────────────────
+const _nfaDrawn = new Set(); // tracks which arrow keys have already been animated
+
+// ── Canvas drawing ────────────────────────────────────────────────────────────
+function drawPreview() {
+  const canvas = document.getElementById('preview');
+  const wrap   = canvas.parentElement;
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const empty = document.getElementById('empty-msg');
+  if (!nfa.states.length) { empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+
+  const W = canvas.width, H = canvas.height;
+  const n = nfa.states.length;
+  const R = Math.min(W, H) * 0.33;
+  const cx = W / 2, cy = H / 2;
+  const NODE_R = 28;
+
+  // Store globally for self-loop direction
+  _cx = cx; _cy = cy;
+
+  // State positions arranged in a circle
+  const pos = {};
+  nfa.states.forEach((s, i) => {
+    const angle = (2 * Math.PI * i / n) - Math.PI / 2;
+    pos[s] = { x: n === 1 ? cx : cx + R * Math.cos(angle), y: n === 1 ? cy : cy + R * Math.sin(angle) };
+  });
+
+  // ── Group all transitions ──────────────────────────────────────────────────
+  const selfLabels = {};
+  const pairLabels = {};
+
+  nfa.epsilon.forEach(e => {
+    if (!e.from || !e.to || !pos[e.from] || !pos[e.to]) return;
+    if (e.from === e.to) { if (!selfLabels[e.from]) selfLabels[e.from]=[]; selfLabels[e.from].push('ε'); }
+    else { const key=e.from+'||'+e.to; if (!pairLabels[key]) pairLabels[key]=[]; pairLabels[key].push('ε'); }
+  });
+
+  if (currentStep === 5) {
+    nfa.states.forEach(st => {
+      nfa.alphabet.forEach(al => {
+        (nfa.trans[st]?.[al]||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(to => {
+          if (!pos[to]) return;
+          if (st===to) { if (!selfLabels[st]) selfLabels[st]=[]; selfLabels[st].push(al); }
+          else { const key=st+'||'+to; if (!pairLabels[key]) pairLabels[key]=[]; pairLabels[key].push(al); }
+        });
+      });
+    });
+  }
+
+  // Build full arrow list
+  const allArrows = [];
+  Object.entries(selfLabels).forEach(([st, labels]) => {
+    const lbls = labels.join(', ');
+    allArrows.push({ key:'self:'+st+':'+lbls, type:'self', st, labels:lbls, col:'#7b61ff' });
+  });
+  const drawnP = new Set();
+  Object.entries(pairLabels).forEach(([key, labels]) => {
+    if (drawnP.has(key)) return;
+    const [st,to] = key.split('||');
+    const revKey  = to+'||'+st;
+    const hasBoth = !!pairLabels[revKey];
+    const col     = labels.includes('ε') ? '#00ffaa' : '#7b61ff';
+    if (hasBoth) {
+      const lbl1 = labels.join(', '), lbl2 = pairLabels[revKey].join(', ');
+      const revCol = pairLabels[revKey].includes('ε') ? '#00ffaa' : '#7b61ff';
+      allArrows.push({ key:'pair:'+key+':'+lbl1,    type:'pair', st,    to,   labels:lbl1, col,    curve:true });
+      allArrows.push({ key:'pair:'+revKey+':'+lbl2, type:'pair', st:to, to:st, labels:lbl2, col:revCol, curve:true });
+      drawnP.add(key); drawnP.add(revKey);
+    } else {
+      const lbl = labels.join(', ');
+      allArrows.push({ key:'pair:'+key+':'+lbl, type:'pair', st, to, labels:lbl, col, curve:false });
+      drawnP.add(key);
+    }
+  });
+
+  // Remove stale drawn keys
+  const currentKeys = new Set(allArrows.map(a=>a.key));
+  [..._nfaDrawn].forEach(k => { if (!currentKeys.has(k)) _nfaDrawn.delete(k); });
+
+  // Helper: redraw all static (already drawn) arrows + nodes, optionally skipping one
+  function redrawStatic(skipKey) {
+    ctx.clearRect(0, 0, W, H);
+    allArrows.forEach(a => {
+      if (a.key === skipKey || !_nfaDrawn.has(a.key)) return;
+      if (a.type==='self') drawSelfLoop(ctx, pos[a.st], NODE_R, a.labels, a.col);
+      else drawArrow(ctx, pos[a.st], pos[a.to], NODE_R, a.labels, a.col, a.curve);
+    });
+    drawNFANodes(ctx, pos, NODE_R);
+  }
+
+  const newArrows = allArrows.filter(a => !_nfaDrawn.has(a.key));
+
+  // Nothing new — plain static redraw
+  if (newArrows.length === 0) {
+    allArrows.forEach(a => {
+      if (a.type==='self') drawSelfLoop(ctx, pos[a.st], NODE_R, a.labels, a.col);
+      else drawArrow(ctx, pos[a.st], pos[a.to], NODE_R, a.labels, a.col, a.curve);
+    });
+    drawNFANodes(ctx, pos, NODE_R);
+    return;
+  }
+
+  // Mark new arrows as drawn before animating (prevents re-triggering)
+  newArrows.forEach(a => _nfaDrawn.add(a.key));
+
+  // Animate new arrows one by one
+  let idx = 0;
+  function animateNext() {
+    if (idx >= newArrows.length) {
+      ctx.clearRect(0, 0, W, H);
+      allArrows.forEach(a => {
+        if (a.type==='self') drawSelfLoop(ctx, pos[a.st], NODE_R, a.labels, a.col);
+        else drawArrow(ctx, pos[a.st], pos[a.to], NODE_R, a.labels, a.col, a.curve);
+      });
+      drawNFANodes(ctx, pos, NODE_R);
+      return;
+    }
+    const a = newArrows[idx++];
+    redrawStatic(a.key);
+    if (a.type==='self') {
+      animateNFASelfLoop(ctx, pos[a.st], NODE_R, a.col, () => redrawStatic(a.key), () => { redrawStatic(null); setTimeout(animateNext, 100); });
+    } else {
+      animateNFAArrow(ctx, pos[a.st], pos[a.to], NODE_R, a.col, a.curve, () => redrawStatic(a.key), () => { redrawStatic(null); setTimeout(animateNext, 100); });
+    }
+  }
+  animateNext();
+}
+
+// ── Draw all NFA nodes on top ─────────────────────────────────────────────────
+function drawNFANodes(ctx, pos, NODE_R) {
+  nfa.states.forEach(s => {
+    const { x, y } = pos[s];
+    const isAccept = nfa.accept.includes(s);
+    const isStart  = nfa.start === s;
+
+    const grd = ctx.createRadialGradient(x, y, 0, x, y, NODE_R + 22);
+    if (isAccept)     { grd.addColorStop(0, 'rgba(0,255,170,0.15)');  grd.addColorStop(1, 'transparent'); }
+    else if (isStart) { grd.addColorStop(0, 'rgba(255,179,71,0.12)'); grd.addColorStop(1, 'transparent'); }
+    else              { grd.addColorStop(0, 'rgba(0,229,255,0.08)');  grd.addColorStop(1, 'transparent'); }
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(x, y, NODE_R + 22, 0, 2*Math.PI); ctx.fill();
+
+    const fg = ctx.createRadialGradient(x-5, y-5, 2, x, y, NODE_R);
+    if (isAccept)     { fg.addColorStop(0, '#02301c'); fg.addColorStop(1, '#011a10'); }
+    else if (isStart) { fg.addColorStop(0, '#3d3a06'); fg.addColorStop(1, '#1a1802'); }
+    else              { fg.addColorStop(0, '#1a1040'); fg.addColorStop(1, '#0d0a20'); }
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.arc(x, y, NODE_R, 0, 2*Math.PI); ctx.fill();
+
+    // Node border with glow
+    const borderCol = isAccept ? '#00ff88' : isStart ? '#fff000' : '#00e5ff';
+    ctx.strokeStyle = borderCol;
+    ctx.lineWidth   = isAccept || isStart ? 2.5 : 1.5;
+    ctx.shadowColor = borderCol;
+    ctx.shadowBlur  = 12;
+    ctx.beginPath(); ctx.arc(x, y, NODE_R, 0, 2*Math.PI); ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Double ring for accept states
+    if (isAccept) {
+      ctx.strokeStyle = 'rgba(0,255,170,0.35)';
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath(); ctx.arc(x, y, NODE_R + 7, 0, 2*Math.PI); ctx.stroke();
+    }
+
+    // Start arrow pointing into the node
+    if (isStart) {
+      ctx.strokeStyle = '#fff000';
+      ctx.lineWidth   = 2;
+      ctx.shadowColor = '#fff000'; ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(x - NODE_R - 34, y);
+      ctx.lineTo(x - NODE_R - 2,  y);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#fff000';
+      ctx.beginPath();
+      ctx.moveTo(x - NODE_R, y);
+      ctx.lineTo(x - NODE_R - 14, y - 7);
+      ctx.lineTo(x - NODE_R - 14, y + 7);
+      ctx.closePath(); ctx.fill();
+    }
+
+    // State label — always drawn on top with correct color
+    ctx.fillStyle    = isAccept ? '#00ff88' : isStart ? '#fff000' : '#dde3f0';
+    ctx.font         = 'bold 12px JetBrains Mono';
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowBlur   = 0;
+    ctx.globalAlpha  = 1;
+    ctx.fillText(s, x, y);
+  });
+}
+
+// ── NFA turtle-draw: arrow grows from source to target ───────────────────────
+function animateNFAArrow(ctx, p1, p2, r, color, curve, redrawStatic, onDone) {
+  const dx = p2.x-p1.x, dy = p2.y-p1.y;
+  const len = Math.sqrt(dx*dx+dy*dy)||1;
+  const ux = dx/len, uy = dy/len;
+  const sx = p1.x+ux*r, sy = p1.y+uy*r;
+  const ex = p2.x-ux*r, ey = p2.y-uy*r;
+  const bend = curve ? 55 : 25;
+  const mx = (sx+ex)/2 - uy*bend, my = (sy+ey)/2 + ux*bend;
+  const STEPS = 80;
+  const pts = [];
+  for (let i=0; i<=STEPS; i++) {
+    const t=i/STEPS;
+    pts.push({ x:(1-t)*(1-t)*sx+2*(1-t)*t*mx+t*t*ex, y:(1-t)*(1-t)*sy+2*(1-t)*t*my+t*t*ey });
+  }
+  const start=performance.now(), dur=600;
+  function frame(now) {
+    const t=Math.min((now-start)/dur,1);
+    const count=Math.floor(t*STEPS);
+
+    // Clear and redraw settled arrows+nodes each frame (skipping this arrow)
+    redrawStatic();
+
+    if (count>0) {
+      ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+      for (let i=1;i<=count;i++) ctx.lineTo(pts[i].x,pts[i].y);
+      ctx.strokeStyle=color; ctx.lineWidth=2; ctx.shadowBlur=0; ctx.shadowColor='transparent'; ctx.setLineDash([]); ctx.stroke();
+
+      // Clean arrowhead at current tip, no glow
+      const cur  = pts[count];
+      const prev = pts[Math.max(count-1,0)];
+      const adx  = cur.x-prev.x, ady = cur.y-prev.y;
+      const alen = Math.sqrt(adx*adx+ady*ady)||1;
+      const ax=adx/alen, ay=ady/alen;
+      const headLen=10, headW=5;
+      ctx.fillStyle=color; ctx.shadowBlur=0; ctx.shadowColor='transparent';
+      ctx.beginPath();
+      ctx.moveTo(cur.x, cur.y);
+      ctx.lineTo(cur.x-headLen*ax+headW*ay, cur.y-headLen*ay-headW*ax);
+      ctx.lineTo(cur.x-headLen*ax-headW*ay, cur.y-headLen*ay+headW*ax);
+      ctx.closePath(); ctx.fill();
+    }
+    if (t<1) requestAnimationFrame(frame); else onDone();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── NFA turtle-draw: self-loop arc grows ─────────────────────────────────────
+function animateNFASelfLoop(ctx, p, r, color, redrawStatic, onDone) {
+  const dx=p.x-_cx, dy=p.y-_cy;
+  const dist=Math.sqrt(dx*dx+dy*dy)||1;
+  const ux=dx/dist, uy=dy/dist;
+  const loopR=16;
+  const loopCX=p.x+ux*(r+loopR+2), loopCY=p.y+uy*(r+loopR+2);
+  const start=performance.now(), dur=600;
+  function frame(now) {
+    const t=Math.min((now-start)/dur,1);
+    const endAngle = -Math.PI/2 + t*2*Math.PI;
+
+    // Clear and redraw settled arrows+nodes each frame (skipping this arrow)
+    redrawStatic();
+
+    ctx.beginPath();
+    ctx.arc(loopCX,loopCY,loopR,-Math.PI/2,endAngle);
+    ctx.strokeStyle=color; ctx.lineWidth=2; ctx.shadowBlur=0; ctx.shadowColor='transparent'; ctx.setLineDash([]); ctx.stroke();
+
+    // Clean arrowhead at current tip, no glow
+    const px  = loopCX + loopR*Math.cos(endAngle);
+    const py  = loopCY + loopR*Math.sin(endAngle);
+    const tax = -Math.sin(endAngle), tay = Math.cos(endAngle);
+    const headLen=8, headW=4;
+    ctx.fillStyle=color; ctx.shadowBlur=0; ctx.shadowColor='transparent';
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px-headLen*tax+headW*tay, py-headLen*tay-headW*tax);
+    ctx.lineTo(px-headLen*tax-headW*tay, py-headLen*tay+headW*tax);
+    ctx.closePath(); ctx.fill();
+
+    if (t<1) requestAnimationFrame(frame); else onDone();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── Self-loop: circle placed OUTWARD from diagram center ──────────────────────
+function drawSelfLoop(ctx, p, r, label, color) {
+  const dx   = p.x - _cx, dy = p.y - _cy;
+  const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+  const ux   = dx / dist, uy = dy / dist;
+
+  const loopR  = 16;
+  const loopCX = p.x + ux * (r + loopR + 2);
+  const loopCY = p.y + uy * (r + loopR + 2);
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 14;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(loopCX, loopCY, loopR, 0, 2 * Math.PI);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Arrowhead at the point on the loop circle closest to the state node
+  const tipX = loopCX - ux * loopR;
+  const tipY = loopCY - uy * loopR;
+  const arrowAng = Math.atan2(ux, -uy);
+  ctx.fillStyle = color;
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX - 7*Math.cos(arrowAng - 0.4), tipY - 7*Math.sin(arrowAng - 0.4));
+  ctx.lineTo(tipX - 7*Math.cos(arrowAng + 0.4), tipY - 7*Math.sin(arrowAng + 0.4));
+  ctx.closePath();
+  ctx.fill();
+
+  // Label placed further outward beyond the loop
+  ctx.fillStyle    = color;
+  ctx.font         = 'bold 10px JetBrains Mono';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, p.x + ux * (r + loopR * 2 + 16), p.y + uy * (r + loopR * 2 + 16));
+}
+
+// ── Arrow between two states ──────────────────────────────────────────────────
+// curve=true  → bend LEFT of travel direction (for bidirectional pairs)
+// curve=false → gentle default bend
+function drawArrow(ctx, p1, p2, r, label, color, curve) {
+  const dx  = p2.x - p1.x, dy = p2.y - p1.y;
+  const len = Math.sqrt(dx*dx + dy*dy) || 1;
+  const ux  = dx/len, uy = dy/len;
+
+  const sx = p1.x + ux*r, sy = p1.y + uy*r;
+  // Pull endpoint back by 4px so larger arrowheads on opposite arrows don't collide
+  const ex = p2.x - ux*(r+4), ey = p2.y - uy*(r+4);
+
+  // Control point offset perpendicular to direction
+  // curve=true → 55px left, curve=false → 25px gentle arc
+  const bend = curve ? 55 : 25;
+  const mx   = (sx+ex)/2 - uy*bend;
+  const my   = (sy+ey)/2 + ux*bend;
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 14;
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.quadraticCurveTo(mx, my, ex, ey);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Arrowhead at the endpoint tangent to the curve
+  const ang = Math.atan2(ey - my, ex - mx);
+  ctx.fillStyle   = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 10;
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - 20*Math.cos(ang-0.38), ey - 20*Math.sin(ang-0.38));
+  ctx.lineTo(ex - 20*Math.cos(ang+0.38), ey - 20*Math.sin(ang+0.38));
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Label beside the arc midpoint, pushed outward perpendicularly
+  ctx.fillStyle    = color;
+  ctx.font         = 'bold 10px JetBrains Mono';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, mx - uy*7, my + ux*7);
+}
+
+// ── DFA Complete Popup ────────────────────────────────────────────────────────
+function showDFACompletePopup() {
+  const overlay = document.createElement('div');
+  overlay.className = 'dfa-popup-overlay';
+  overlay.innerHTML = `
+    <div class="dfa-popup">
+      <div class="dfa-popup-icon">✓</div>
+      <div class="dfa-popup-title">DFA Conversion Complete!</div>
+      <div class="dfa-popup-sub">
+        Your NFA has been successfully converted to a DFA.<br>
+        All states and transitions have been constructed.
+      </div>
+      <button class="dfa-popup-btn" onclick="this.closest('.dfa-popup-overlay').remove()">View DFA</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function goBackToNFA() {
+  if (_dfaAnimState) { stopAutoPlay(); _dfaAnimState = null; }
+  ['anim-prev-btn','anim-next-btn','anim-auto-btn','anim-restart-btn'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  document.getElementById('dfa-step-label').style.display = 'none';
+  document.getElementById('regex-section').style.display = 'none';
+  _nfaDrawn.clear();
+  document.querySelector('.main').style.display = 'grid';
+  document.getElementById('dfa-page').style.display = 'none';
+}
+
+// ── Finalize: show DFA result page ───────────────────────────────────────────
+function finalize() {
+  const dfa = convertToDFA();
+  showDFAPage(dfa);
+}
+
+// ── Subset Construction (NFA → DFA) ──────────────────────────────────────────
+function epsilonClosure(states, epsMap) {
+  const closure = new Set(states);
+  const stack   = [...states];
+  while (stack.length) {
+    const s = stack.pop();
+    (epsMap[s] || []).forEach(t => { if (!closure.has(t)) { closure.add(t); stack.push(t); } });
+  }
+  return [...closure].sort();
+}
+
+function moveSet(states, symbol) {
+  const result = new Set();
+  states.forEach(s => (nfa.trans[s]?.[symbol] || '').split(',').map(x=>x.trim()).filter(Boolean).forEach(t => result.add(t)));
+  return [...result];
+}
+
+function setKey(arr) { return arr.length ? arr.slice().sort().join(',') : '∅'; }
+
+function convertToDFA() {
+  // Build epsilon map
+  const epsMap = {};
+  nfa.states.forEach(s => epsMap[s] = []);
+  nfa.epsilon.forEach(e => { if (e.from && e.to) { if (!epsMap[e.from]) epsMap[e.from]=[]; epsMap[e.from].push(e.to); } });
+
+  const startClosure = epsilonClosure([nfa.start], epsMap);
+  const startKey     = setKey(startClosure);
+
+  const dfaStates  = {};   // key → { nfaSet, trans: {sym: key} }
+  const queue      = [startClosure];
+  const visited    = new Set([startKey]);
+
+  while (queue.length) {
+    const cur    = queue.shift();
+    const curKey = setKey(cur);
+    dfaStates[curKey] = { nfaSet: cur, trans: {} };
+
+    nfa.alphabet.forEach(sym => {
+      const moved   = moveSet(cur, sym);
+      const closure = epsilonClosure(moved, epsMap);
+      const nextKey = setKey(closure);
+
+      if (closure.length === 0) {
+        dfaStates[curKey].trans[sym] = '∅';
+        // ensure dead state exists
+        if (!dfaStates['∅']) {
+          dfaStates['∅'] = { nfaSet: [], trans: {} };
+          nfa.alphabet.forEach(s2 => dfaStates['∅'].trans[s2] = '∅');
+        }
+      } else {
+        dfaStates[curKey].trans[sym] = nextKey;
+        if (!visited.has(nextKey)) { visited.add(nextKey); queue.push(closure); }
+      }
+    });
+  }
+
+  // Name DFA states D0, D1, ...
+  const keys    = Object.keys(dfaStates);
+  const nameMap = {};
+  let idx = 0;
+  // Start state first
+  nameMap[startKey] = 'D0'; idx = 1;
+  keys.forEach(k => { if (k !== startKey && k !== '∅') nameMap[k] = 'D' + idx++; });
+  if (dfaStates['∅']) nameMap['∅'] = '∅';
+
+  // Accept states: any DFA state whose NFA subset contains an NFA accept state
+  const dfaAccept = keys.filter(k => dfaStates[k].nfaSet.some(s => nfa.accept.includes(s)));
+
+  return { dfaStates, keys, nameMap, startKey, dfaAccept, alphabet: nfa.alphabet };
+}
+
+// ── Show DFA result page ──────────────────────────────────────────────────────
+function showDFAPage(dfa) {
+  document.querySelector('.main').style.display = 'none';
+  document.getElementById('dfa-page').style.display = 'grid';
+  document.getElementById('dfa-topbar-label').textContent = 'DFA Result';
+
+  const { dfaStates, keys, nameMap, startKey, dfaAccept, alphabet } = dfa;
+  renderNFAReferenceTable(alphabet);
+
+  // Build table
+  let thHtml = '<tr><th>NFA Subset</th><th>DFA State</th>';
+  alphabet.forEach(a => thHtml += `<th>${a}</th>`);
+  thHtml += '</tr>';
+
+  let tbHtml = '';
+  keys.forEach((k, ki) => {
+    const isStart  = k === startKey;
+    const isAccept = dfaAccept.includes(k);
+    const isDead   = k === '∅';
+    const rowClass = isDead ? 'dead-row' : isAccept ? 'accept-row' : isStart ? 'start-row' : '';
+    tbHtml += `<tr class="${rowClass}" id="dfa-row-${ki}" style="opacity:0;transition:opacity 0.4s;">
+      <td style="color:var(--muted);font-size:10px;">{${k}}</td>
+      <td style="font-weight:700;">${isStart?'→ ':''}${nameMap[k]}${isAccept?' *':''}</td>`;
+    alphabet.forEach(a => {
+      const next = dfaStates[k].trans[a] || '∅';
+      tbHtml += `<td id="dfa-cell-${ki}-${a}" style="opacity:0;transition:opacity 0.3s;">${nameMap[next]||'∅'}</td>`;
+    });
+    tbHtml += '</tr>';
+  });
+
+  document.getElementById('dfa-thead').innerHTML = thHtml;
+  document.getElementById('dfa-tbody').innerHTML = tbHtml;
+
+  // State mapping legend
+  let legendHtml = '';
+  keys.forEach((k, ki) => {
+    const isStart  = k === startKey;
+    const isAccept = dfaAccept.includes(k);
+    const isDead   = k === '∅';
+    const cls = isDead ? '' : isAccept ? 'tag-green' : isStart ? 'tag-amber' : 'tag-cyan';
+    legendHtml += `<div id="dfa-legend-${ki}" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);opacity:0;transition:opacity 0.4s;">
+      <span class="tag ${cls}" style="min-width:42px;text-align:center;">${nameMap[k]}</span>
+      <span style="color:var(--muted);font-size:11px;">= {${k}}</span>
+      ${isStart  ? '<span style="color:var(--amber);font-size:10px;letter-spacing:1px;">START</span>' : ''}
+      ${isAccept ? '<span style="color:var(--green);font-size:10px;letter-spacing:1px;">ACCEPT</span>' : ''}
+    </div>`;
+  });
+  document.getElementById('dfa-legend').innerHTML = legendHtml;
+
+  setTimeout(() => initDFAAnimation(dfa), 100);
+  setTimeout(() => showRegex(dfa), 200);
+}
+
+function renderNFAReferenceTable(alphabet) {
+  let th = '<tr><th class="state-col">NFA state</th>';
+  alphabet.forEach(a => th += `<th>${a}</th>`);
+  th += '</tr>';
+  
+  let tb = '';
+  nfa.states.forEach(s => {
+    tb += `<tr id="nfa-ref-row-${s}"><td class="state-col">${s}${nfa.start===s?' →':''}${nfa.accept.includes(s)?' *':''}</td>`;
+    alphabet.forEach(a => {
+      const val = nfa.trans[s]?.[a] || '∅';
+      tb += `<td id="nfa-ref-cell-${s}-${a}">{${val}}</td>`;
+    });
+    tb += '</tr>';
+  });
+  
+  document.getElementById('nfa-ref-thead').innerHTML = th;
+  document.getElementById('nfa-ref-tbody').innerHTML = tb;
+}
+
+// ── DFA Animation Engine (step-by-step + auto) ───────────────────────────────
+let _dfaAnimState = null;
+
+function initDFAAnimation(dfa) {
+  const canvas = document.getElementById('dfa-canvas');
+  const wrap   = canvas.parentElement;
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  const ctx = canvas.getContext('2d');
+
+  const { dfaStates, keys, nameMap, startKey, dfaAccept, alphabet } = dfa;
+  const liveKeys = keys.filter(k => k !== '∅');
+  const allKeys  = dfaStates['∅'] ? [...liveKeys, '∅'] : liveKeys;
+
+  const W = canvas.width, H = canvas.height;
+  const n = allKeys.length;
+  const R = Math.min(W, H) * 0.33;
+  const cx = W/2, cy = H/2;
+  const NODE_R = 28;
+  _cx = cx; _cy = cy;
+
+  const pos = {};
+  allKeys.forEach((k, i) => {
+    const angle = (2 * Math.PI * i / n) - Math.PI / 2;
+    pos[k] = { x: n===1 ? cx : cx + R*Math.cos(angle), y: n===1 ? cy : cy + R*Math.sin(angle) };
+  });
+
+  // Build transition list for DFA diagram (grouped for drawing arrows)
+  const selfLabels = {}, pairLabels = {};
+  allKeys.forEach(k => {
+    alphabet.forEach(sym => {
+      const next = dfaStates[k]?.trans[sym];
+      if (!next || !pos[next]) return;
+      if (k === next) { if (!selfLabels[k]) selfLabels[k]=[]; selfLabels[k].push(sym); }
+      else { const key=k+'||'+next; if (!pairLabels[key]) pairLabels[key]=[]; pairLabels[key].push(sym); }
+    });
+  });
+
+  const transitions = [];
+  const drawnT = new Set();
+  Object.entries(selfLabels).forEach(([k, labels]) => {
+    transitions.push({ from: k, to: k, labels: labels.join(', '), isSelf: true });
+  });
+  Object.entries(pairLabels).forEach(([key, labels]) => {
+    if (drawnT.has(key)) return;
+    const [fr, to] = key.split('||');
+    const revKey   = to + '||' + fr;
+    const hasBoth  = !!pairLabels[revKey];
+    if (hasBoth) {
+      transitions.push({ from: fr, to, labels: labels.join(', '), isSelf: false, curve: true });
+      transitions.push({ from: to, to: fr, labels: pairLabels[revKey].join(', '), isSelf: false, curve: true });
+      drawnT.add(key); drawnT.add(revKey);
+    } else {
+      transitions.push({ from: fr, to, labels: labels.join(', '), isSelf: false, curve: false });
+      drawnT.add(key);
+    }
+  });
+
+  // ── NEW: Build row-first step plan ──────────────────────────────────────────
+  // Each step is one of:
+  //   { type:'node',  key }          → show row header + animate node pop-in
+  //   { type:'cell',  key, sym }     → reveal one table cell + show step logic
+  //   { type:'arrow', tIdx }         → animate one DFA diagram arrow
+  //
+  // Order: for each DFA state: [node step] + [cell step × alphabet.length]
+  //        then: all diagram arrows at the end
+  const stepPlan = [];
+  allKeys.forEach(k => {
+    stepPlan.push({ type: 'node', key: k });
+    alphabet.forEach(sym => {
+      stepPlan.push({ type: 'cell', key: k, sym });
+    });
+  });
+  transitions.forEach((t, tIdx) => {
+    stepPlan.push({ type: 'arrow', tIdx });
+  });
+
+  const totalSteps = stepPlan.length;
+
+  _dfaAnimState = {
+    ctx, dfa, pos, allKeys, transitions, NODE_R,
+    nameMap, startKey, dfaAccept, alphabet, keys,
+    stepPlan,
+    visibleNodes: new Set(),
+    visibleTransitions: new Set(),
+    currentStep: 0,
+    totalSteps,
+    isAnimating: false,
+    autoTimer: null,
+    autoPlaying: false
+  };
+
+  // Show control buttons
+  ['anim-prev-btn','anim-next-btn','anim-auto-btn','anim-restart-btn'].forEach(id => {
+    document.getElementById(id).style.display = 'inline-block';
+  });
+  document.getElementById('dfa-step-label').style.display = 'inline';
+
+  updateStepLabel();
+  dfaRedraw();
+}
+
+function updateStepLabel() {
+  if (!_dfaAnimState) return;
+  const { currentStep, totalSteps, stepPlan, nameMap } = _dfaAnimState;
+  const lbl = document.getElementById('dfa-step-label');
+  const miniTitle = document.getElementById('merging-nfa-title');
+  const miniCont  = document.getElementById('mini-nfa-container');
+
+  if (currentStep === 0) {
+    lbl.textContent = 'Step 0 / ' + totalSteps + ' — Ready';
+    miniTitle.style.display = 'none';
+    miniCont.style.display  = 'none';
+    document.getElementById('calc-step-info').style.display = 'none';
+    clearNFAHighlights();
+    return;
+  }
+
+  const step = stepPlan[currentStep - 1];
+  lbl.textContent = `Step ${currentStep} / ${totalSteps}`;
+
+  if (step.type === 'node') {
+    lbl.textContent += ` — Node ${nameMap[step.key]}`;
+    miniTitle.style.display = 'block';
+    miniCont.style.display  = 'block';
+    miniTitle.textContent   = `Merging NFA States for ${nameMap[step.key]}`;
+    drawMiniNFA(step.key);
+  } else if (step.type === 'cell') {
+    lbl.textContent += ` — ${nameMap[step.key]} on '${step.sym}'`;
+    miniTitle.style.display = 'block';
+    miniCont.style.display  = 'block';
+    miniTitle.textContent   = `Computing δ(${nameMap[step.key]}, ${step.sym})`;
+    drawMiniNFA(step.key);
+  } else if (step.type === 'arrow') {
+    lbl.textContent += ` — Drawing Arrow`;
+    miniTitle.style.display = 'none';
+    miniCont.style.display  = 'none';
+  }
+}
+
+function clearNFAHighlights() {
+  document.querySelectorAll('.nfa-ref-table tr, .nfa-ref-table td').forEach(el => {
+    el.classList.remove('highlight-row', 'highlight-cell');
+  });
+}
+
+function drawMiniNFA(highlightSubsetKey) {
+  const canvas = document.getElementById('mini-nfa');
+  const wrap = canvas.parentElement;
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const W = canvas.width, H = canvas.height;
+  const n = nfa.states.length;
+  const R = Math.min(W, H) * 0.3;
+  const cx = W / 2, cy = H / 2;
+  const NODE_R = 18;
+
+  const pos = {};
+  nfa.states.forEach((s, i) => {
+    const angle = (2 * Math.PI * i / n) - Math.PI / 2;
+    pos[s] = { x: n === 1 ? cx : cx + R * Math.cos(angle), y: n === 1 ? cy : cy + R * Math.sin(angle) };
+  });
+
+  const subset = highlightSubsetKey === '∅' ? [] : highlightSubsetKey.split(',').map(s=>s.trim());
+
+  // Draw NFA nodes in mini view
+  nfa.states.forEach(s => {
+    const { x, y } = pos[s];
+    const inSubset = subset.includes(s);
+    
+    ctx.beginPath();
+    ctx.arc(x, y, NODE_R, 0, 2*Math.PI);
+    ctx.fillStyle = inSubset ? 'rgba(0, 229, 255, 0.4)' : 'rgba(255, 255, 255, 0.05)';
+    ctx.fill();
+    ctx.strokeStyle = inSubset ? '#00e5ff' : '#444';
+    ctx.lineWidth = inSubset ? 2 : 1;
+    if (inSubset) { ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = 10; }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = inSubset ? '#fff' : '#666';
+    ctx.font = 'bold 9px JetBrains Mono';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(s, x, y);
+  });
+
+  // Particle merging effect
+  if (subset.length > 0) {
+    const now = performance.now();
+    const t = (now % 1000) / 1000;
+    subset.forEach(s => {
+      if (!pos[s]) return;
+      const { x, y } = pos[s];
+      const px = x + (cx - x) * t;
+      const py = y + (cy - y) * t;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, 2*Math.PI);
+      ctx.fillStyle = '#00e5ff';
+      ctx.fill();
+    });
+    // Continue animation loop for mini nfa while visible
+    if (_dfaAnimState) requestAnimationFrame(() => drawMiniNFA(highlightSubsetKey));
+  }
+}
+
+function dfaRedraw() {
+  if (!_dfaAnimState) return;
+  const { ctx, pos, visibleNodes, visibleTransitions, transitions, NODE_R,
+          nameMap, startKey, dfaAccept, dfa } = _dfaAnimState;
+  const { dfaStates } = dfa;
+  const canvas = document.getElementById('dfa-canvas');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  visibleTransitions.forEach(i => {
+    const t = transitions[i];
+    if (t.isSelf) drawSelfLoop(ctx, pos[t.from], NODE_R, t.labels, '#7b61ff');
+    else drawArrow(ctx, pos[t.from], pos[t.to], NODE_R, t.labels, '#7b61ff', t.curve);
+  });
+  visibleNodes.forEach(k => drawDFANode(ctx, k, pos[k], nameMap, startKey, dfaAccept, NODE_R));
+}
+
+function revealTableStep(stepIndex, dfa) {
+  if (!_dfaAnimState) return;
+  const { stepPlan, keys, alphabet, nameMap, dfaStates } = _dfaAnimState;
+  clearNFAHighlights();
+  document.getElementById('calc-step-info').style.display = 'none';
+
+  if (stepIndex < 0 || stepIndex >= stepPlan.length) return;
+  const step = stepPlan[stepIndex];
+
+  if (step.type === 'node') {
+    // Reveal the row header + legend for this state
+    const ki = keys.indexOf(step.key);
+    const rowEl    = document.getElementById(`dfa-row-${ki}`);
+    const legendEl = document.getElementById(`dfa-legend-${ki}`);
+    if (rowEl)    rowEl.style.opacity    = '1';
+    if (legendEl) legendEl.style.opacity = '1';
+
+    // Highlight NFA states for this subset
+    const subset = step.key === '∅' ? [] : step.key.split(',').map(s=>s.trim());
+    subset.forEach(s => {
+      const nfaRow = document.getElementById(`nfa-ref-row-${s}`);
+      if (nfaRow) nfaRow.classList.add('highlight-row');
+    });
+
+  } else if (step.type === 'cell') {
+    // Reveal this specific cell and show step logic
+    const ki = keys.indexOf(step.key);
+    const cell = document.getElementById(`dfa-cell-${ki}-${step.sym}`);
+    if (cell) cell.style.opacity = '1';
+
+    // Show step-logic calculation box
+    const calcBox = document.getElementById('calc-step-info');
+    const mathBox = document.getElementById('calc-math-box');
+    const resBox  = document.getElementById('calc-result-box');
+
+    const subset = step.key === '∅' ? [] : step.key.split(',').map(x=>x.trim());
+    const nextKey = dfa.dfaStates[step.key]?.trans[step.sym] || '∅';
+
+    let mathText = '';
+    if (subset.length > 0) {
+      const unions = [];
+      subset.forEach(s => {
+        const next = nfa.trans[s]?.[step.sym] || '∅';
+        unions.push(`{${next}}`);
+        document.getElementById(`nfa-ref-cell-${s}-${step.sym}`)?.classList.add('highlight-cell');
+        document.getElementById(`nfa-ref-row-${s}`)?.classList.add('highlight-row');
+      });
+      mathText = `δ<sub>DFA</sub>(${nameMap[step.key] || '{'+step.key+'}'}, ${step.sym}) = <br>`;
+      mathText += unions.join(' ∪ ') + ` = {${nextKey}}`;
+      resBox.textContent = `Result: ${nameMap[nextKey] || '{'+nextKey+'}'}`;
+    } else {
+      mathText = `δ<sub>DFA</sub>(∅, ${step.sym}) = ∅`;
+      resBox.textContent = `Result: ∅`;
+    }
+    mathBox.innerHTML = mathText;
+    calcBox.style.display = 'block';
+
+  } else if (step.type === 'arrow') {
+    // Nothing to highlight in table — just clear
+    clearNFAHighlights();
+  }
+}
+
+function animStepNext() {
+  if (!_dfaAnimState || _dfaAnimState.isAnimating) return;
+  const s = _dfaAnimState;
+  if (s.currentStep >= s.totalSteps) return;
+  s.isAnimating = true;
+
+  const step = s.stepPlan[s.currentStep];
+  revealTableStep(s.currentStep, s.dfa);
+
+  if (step.type === 'node') {
+    // Animate node pop-in on DFA diagram
+    animateNodePopIn(step.key, s.pos[step.key], s.nameMap, s.startKey, s.dfaAccept, s.NODE_R, s.ctx, () => {
+      s.visibleNodes.add(step.key);
+      dfaRedraw();
+      s.currentStep++;
+      s.isAnimating = false;
+      updateStepLabel();
+      if (s.autoPlaying) scheduleAutoNext();
+    });
+
+  } else if (step.type === 'cell') {
+    // No diagram animation for cell steps — just advance
+    s.currentStep++;
+    s.isAnimating = false;
+    updateStepLabel();
+    if (s.currentStep >= s.totalSteps) { if (s.autoPlaying) stopAutoPlay(); showDFACompletePopup(); return; }
+    if (s.autoPlaying) scheduleAutoNext();
+
+  } else if (step.type === 'arrow') {
+    const t = s.transitions[step.tIdx];
+    const onDone = () => {
+      s.visibleTransitions.add(step.tIdx);
+      dfaRedraw();
+      s.currentStep++;
+      s.isAnimating = false;
+      updateStepLabel();
+      if (s.currentStep >= s.totalSteps) { if (s.autoPlaying) stopAutoPlay(); showDFACompletePopup(); return; }
+      if (s.autoPlaying) scheduleAutoNext();
+    };
+    if (t.isSelf) {
+      animateSelfLoop(s.ctx, s.pos[t.from], s.NODE_R, t.labels, '#7b61ff', onDone);
+    } else {
+      animateParticle(s.ctx, s.pos[t.from], s.pos[t.to], s.NODE_R, t.labels, '#7b61ff', t.curve, onDone);
+    }
+  }
+}
+
+function animStepPrev() {
+  if (!_dfaAnimState || _dfaAnimState.isAnimating) return;
+  stopAutoPlay();
+  const s = _dfaAnimState;
+  if (s.currentStep <= 0) return;
+  s.currentStep--;
+
+  const step = s.stepPlan[s.currentStep];
+
+  if (step.type === 'node') {
+    const k = step.key;
+    s.visibleNodes.delete(k);
+    const ki = s.keys.indexOf(k);
+    const rowEl    = document.getElementById(`dfa-row-${ki}`);
+    const legendEl = document.getElementById(`dfa-legend-${ki}`);
+    if (rowEl)    rowEl.style.opacity = '0';
+    if (legendEl) legendEl.style.opacity = '0';
+    // Also hide all cells for this row
+    s.alphabet.forEach(sym => {
+      const cell = document.getElementById(`dfa-cell-${ki}-${sym}`);
+      if (cell) cell.style.opacity = '0';
+    });
+
+  } else if (step.type === 'cell') {
+    const ki = s.keys.indexOf(step.key);
+    const cell = document.getElementById(`dfa-cell-${ki}-${step.sym}`);
+    if (cell) cell.style.opacity = '0';
+
+  } else if (step.type === 'arrow') {
+    s.visibleTransitions.delete(step.tIdx);
+  }
+
+  dfaRedraw();
+  updateStepLabel();
+  if (s.currentStep > 0) revealTableStep(s.currentStep - 1, s.dfa);
+  else {
+    clearNFAHighlights();
+    const cinfo = document.getElementById('calc-step-info');
+    if (cinfo) cinfo.style.display = 'none';
+  }
+}
+
+function animToggleAuto() {
+  if (!_dfaAnimState) return;
+  if (_dfaAnimState.autoPlaying) stopAutoPlay();
+  else startAutoPlay();
+}
+
+function startAutoPlay() {
+  if (!_dfaAnimState) return;
+  _dfaAnimState.autoPlaying = true;
+  document.getElementById('anim-auto-btn').textContent = '⏸ Pause';
+  if (!_dfaAnimState.isAnimating) scheduleAutoNext();
+}
+
+function stopAutoPlay() {
+  if (!_dfaAnimState) return;
+  _dfaAnimState.autoPlaying = false;
+  document.getElementById('anim-auto-btn').textContent = '▶ Auto Play';
+  if (_dfaAnimState.autoTimer) { clearTimeout(_dfaAnimState.autoTimer); _dfaAnimState.autoTimer = null; }
+}
+
+function scheduleAutoNext() {
+  if (!_dfaAnimState || !_dfaAnimState.autoPlaying) return;
+  const step = _dfaAnimState.stepPlan[_dfaAnimState.currentStep];
+  const delay = step && step.type === 'cell' ? 400 : 300;
+  _dfaAnimState.autoTimer = setTimeout(() => { if (_dfaAnimState && _dfaAnimState.autoPlaying) animStepNext(); }, delay);
+}
+
+function animRestart() {
+  if (!_dfaAnimState) return;
+  stopAutoPlay();
+  _dfaAnimState.isAnimating = false;
+  _dfaAnimState.currentStep = 0;
+  _dfaAnimState.visibleNodes.clear();
+  _dfaAnimState.visibleTransitions.clear();
+  // Reset table opacity
+  _dfaAnimState.keys.forEach((k, ki) => {
+    const rowEl    = document.getElementById(`dfa-row-${ki}`);
+    const legendEl = document.getElementById(`dfa-legend-${ki}`);
+    if (rowEl)    rowEl.style.opacity = '0';
+    if (legendEl) legendEl.style.opacity = '0';
+    _dfaAnimState.alphabet.forEach(a => {
+      const cell = document.getElementById(`dfa-cell-${ki}-${a}`);
+      if (cell) cell.style.opacity = '0';
+    });
+  });
+  clearNFAHighlights();
+  document.getElementById('calc-step-info').style.display = 'none';
+  dfaRedraw();
+  updateStepLabel();
+}
+
+// ── Animated DFA build (legacy — kept for compatibility) ─────────────────────
+function animateDFA(dfa) { /* replaced by initDFAAnimation */ }
+
+// ── Animate a node popping in (scale from 0 to full) ─────────────────────────
+function animateNodePopIn(k, p, nameMap, startKey, dfaAccept, NODE_R, ctx, onDone) {
+  const start   = performance.now();
+  const duration = 280;
+
+  function frame(now) {
+    const t    = Math.min((now - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    const scale = ease;
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.scale(scale, scale);
+    ctx.translate(-p.x, -p.y);
+    drawDFANode(ctx, k, p, nameMap, startKey, dfaAccept, NODE_R);
+    ctx.restore();
+
+    if (t < 1) requestAnimationFrame(frame);
+    else onDone();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── Animate arrow growing like turtle drawing — clean, no glow ───────────────
+function animateParticle(ctx, p1, p2, r, label, color, curve, onDone) {
+  const dx   = p2.x - p1.x, dy = p2.y - p1.y;
+  const len  = Math.sqrt(dx*dx + dy*dy) || 1;
+  const ux   = dx/len, uy = dy/len;
+  const sx   = p1.x + ux*r, sy = p1.y + uy*r;
+  const ex   = p2.x - ux*r, ey = p2.y - uy*r;
+  const bend = curve ? 55 : 25;
+  const mx   = (sx+ex)/2 - uy*bend;
+  const my   = (sy+ey)/2 + ux*bend;
+
+  const STEPS = 80;
+  const pts = [];
+  for (let i = 0; i <= STEPS; i++) {
+    const t = i / STEPS;
+    pts.push({
+      x: (1-t)*(1-t)*sx + 2*(1-t)*t*mx + t*t*ex,
+      y: (1-t)*(1-t)*sy + 2*(1-t)*t*my + t*t*ey
+    });
+  }
+
+  const start    = performance.now();
+  const duration = 600;
+
+  function frame(now) {
+    const t     = Math.min((now - start) / duration, 1);
+    const count = Math.floor(t * STEPS);
+
+    // Clear and redraw settled state each frame to avoid ghost trails
+    const canvas = document.getElementById('dfa-canvas');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    dfaRedraw();
+
+    if (count > 0) {
+      // Draw the growing line from tail to current tip
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i <= count; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.strokeStyle = color;
+      ctx.lineWidth   = 2;
+      ctx.shadowBlur  = 0;
+      ctx.shadowColor = 'transparent';
+      ctx.setLineDash([]);
+      ctx.stroke();
+
+      // Arrowhead at current tip only, no glow
+      const cur  = pts[count];
+      const prev = pts[Math.max(count - 1, 0)];
+      const adx  = cur.x - prev.x, ady = cur.y - prev.y;
+      const alen = Math.sqrt(adx*adx + ady*ady) || 1;
+      const ax   = adx/alen, ay = ady/alen;
+      const headLen = 10, headW = 5;
+      ctx.fillStyle   = color;
+      ctx.shadowBlur  = 0;
+      ctx.shadowColor = 'transparent';
+      ctx.beginPath();
+      ctx.moveTo(cur.x, cur.y);
+      ctx.lineTo(cur.x - headLen*ax + headW*ay, cur.y - headLen*ay - headW*ax);
+      ctx.lineTo(cur.x - headLen*ax - headW*ay, cur.y - headLen*ay + headW*ax);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    if (t < 1) requestAnimationFrame(frame);
+    else onDone();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── Animate self-loop growing as a clean arc ─────────────────────────────────
+function animateSelfLoop(ctx, p, r, label, color, onDone) {
+  const dx   = p.x - _cx, dy = p.y - _cy;
+  const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+  const ux   = dx/dist, uy = dy/dist;
+  const loopR  = 16;
+  const loopCX = p.x + ux*(r + loopR + 2);
+  const loopCY = p.y + uy*(r + loopR + 2);
+
+  const start    = performance.now();
+  const duration = 500;
+
+  function frame(now) {
+    const t        = Math.min((now - start) / duration, 1);
+    const endAngle = -Math.PI/2 + t * 2 * Math.PI;
+
+    // Clear and redraw settled state each frame to avoid ghost trails
+    const canvas = document.getElementById('dfa-canvas');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    dfaRedraw();
+
+    ctx.beginPath();
+    ctx.arc(loopCX, loopCY, loopR, -Math.PI/2, endAngle);
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 2;
+    ctx.shadowBlur  = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.setLineDash([]);
+    ctx.stroke();
+
+    // Arrowhead at current tip, no glow
+    const px  = loopCX + loopR*Math.cos(endAngle);
+    const py  = loopCY + loopR*Math.sin(endAngle);
+    const tax = -Math.sin(endAngle), tay = Math.cos(endAngle);
+    const headLen = 8, headW = 4;
+    ctx.fillStyle   = color;
+    ctx.shadowBlur  = 0;
+    ctx.shadowColor = 'transparent';
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px - headLen*tax + headW*tay, py - headLen*tay - headW*tax);
+    ctx.lineTo(px - headLen*tax - headW*tay, py - headLen*tay + headW*tax);
+    ctx.closePath();
+    ctx.fill();
+
+    if (t < 1) requestAnimationFrame(frame);
+    else onDone();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ── Draw a single DFA node ────────────────────────────────────────────────────
+function drawDFANode(ctx, k, p, nameMap, startKey, dfaAccept, NODE_R) {
+  const { x, y }  = p;
+  const isAccept  = dfaAccept.includes(k);
+  const isStart   = k === startKey;
+  const isDead    = k === '∅';
+
+  const grd = ctx.createRadialGradient(x,y,0,x,y,NODE_R+22);
+  if (isAccept)     { grd.addColorStop(0,'rgba(0,255,170,0.15)');   grd.addColorStop(1,'transparent'); }
+  else if (isStart) { grd.addColorStop(0,'rgba(255,179,71,0.12)');  grd.addColorStop(1,'transparent'); }
+  else if (isDead)  { grd.addColorStop(0,'rgba(100,100,100,0.06)'); grd.addColorStop(1,'transparent'); }
+  else              { grd.addColorStop(0,'rgba(0,229,255,0.08)');   grd.addColorStop(1,'transparent'); }
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(x,y,NODE_R+22,0,2*Math.PI); ctx.fill();
+
+  const fg = ctx.createRadialGradient(x-5,y-5,2,x,y,NODE_R);
+  if (isAccept)     { fg.addColorStop(0,'#063d28'); fg.addColorStop(1,'#021a12'); }
+  else if (isStart) { fg.addColorStop(0,'#3d2406'); fg.addColorStop(1,'#1a0f02'); }
+  else if (isDead)  { fg.addColorStop(0,'#1a1a1a'); fg.addColorStop(1,'#0a0a0a'); }
+  else              { fg.addColorStop(0,'#1a1040'); fg.addColorStop(1,'#0d0a20'); }
+  ctx.fillStyle = fg;
+  ctx.beginPath(); ctx.arc(x,y,NODE_R,0,2*Math.PI); ctx.fill();
+
+  const borderCol = isDead ? '#333350' : isAccept ? '#00ff88' : isStart ? '#fff000' : '#00e5ff';
+  ctx.strokeStyle = borderCol; ctx.lineWidth = isAccept||isStart ? 2.5 : 1.5;
+  ctx.shadowColor = borderCol; ctx.shadowBlur = isDead ? 0 : 12;
+  ctx.beginPath(); ctx.arc(x,y,NODE_R,0,2*Math.PI); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  if (isAccept) {
+    ctx.strokeStyle = 'rgba(0,255,170,0.35)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(x,y,NODE_R+7,0,2*Math.PI); ctx.stroke();
+  }
+
+  if (isStart) {
+    ctx.strokeStyle='#fff000'; ctx.lineWidth=2;
+    ctx.shadowColor='#fff000'; ctx.shadowBlur=8;
+    ctx.beginPath(); ctx.moveTo(x-NODE_R-34,y); ctx.lineTo(x-NODE_R-2,y); ctx.stroke();
+    ctx.shadowBlur=0;
+    ctx.fillStyle='#fff000';
+    ctx.beginPath(); ctx.moveTo(x-NODE_R,y); ctx.lineTo(x-NODE_R-14,y-7); ctx.lineTo(x-NODE_R-14,y+7); ctx.closePath(); ctx.fill();
+  }
+
+  ctx.fillStyle    = isDead ? '#555570' : isAccept ? '#00ff88' : isStart ? '#fff000' : '#dde3f0';
+  ctx.font         = 'bold 12px JetBrains Mono';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowBlur   = 0;
+  ctx.fillText(nameMap[k], x, y);
+}
+
+// ── Static full redraw (used on resize) ──────────────────────────────────────
+function drawDFA(dfa) {
+  const canvas = document.getElementById('dfa-canvas');
+  const wrap   = canvas.parentElement;
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const { dfaStates, keys, nameMap, startKey, dfaAccept, alphabet } = dfa;
+  const liveKeys = keys.filter(k => k !== '∅');
+  const allKeys  = dfaStates['∅'] ? [...liveKeys, '∅'] : liveKeys;
+  const W = canvas.width, H = canvas.height;
+  const n = allKeys.length;
+  const R = Math.min(W, H) * 0.33;
+  const cx = W/2, cy = H/2;
+  const NODE_R = 28;
+  _cx = cx; _cy = cy;
+
+  const pos = {};
+  allKeys.forEach((k, i) => {
+    const angle = (2 * Math.PI * i / n) - Math.PI / 2;
+    pos[k] = { x: n===1 ? cx : cx + R*Math.cos(angle), y: n===1 ? cy : cy + R*Math.sin(angle) };
+  });
+
+  const selfLabels = {}, pairLabels = {};
+  allKeys.forEach(k => {
+    alphabet.forEach(sym => {
+      const next = dfaStates[k]?.trans[sym];
+      if (!next || !pos[next]) return;
+      if (k === next) { if (!selfLabels[k]) selfLabels[k]=[]; selfLabels[k].push(sym); }
+      else { const key=k+'||'+next; if (!pairLabels[key]) pairLabels[key]=[]; pairLabels[key].push(sym); }
+    });
+  });
+
+  Object.entries(selfLabels).forEach(([k, labels]) => drawSelfLoop(ctx, pos[k], NODE_R, labels.join(', '), '#7b61ff'));
+
+  const drawn = new Set();
+  Object.entries(pairLabels).forEach(([key, labels]) => {
+    if (drawn.has(key)) return;
+    const [fr, to] = key.split('||');
+    const revKey = to+'||'+fr, hasBoth = !!pairLabels[revKey];
+    if (hasBoth) {
+      drawArrow(ctx, pos[fr], pos[to], NODE_R, labels.join(', '), '#7b61ff', true);
+      drawArrow(ctx, pos[to], pos[fr], NODE_R, pairLabels[revKey].join(', '), '#7b61ff', true);
+      drawn.add(key); drawn.add(revKey);
+    } else { drawArrow(ctx, pos[fr], pos[to], NODE_R, labels.join(', '), '#7b61ff', false); drawn.add(key); }
+  });
+
+  allKeys.forEach(k => drawDFANode(ctx, k, pos[k], nameMap, startKey, dfaAccept, NODE_R));
+}
+
+window.addEventListener('resize', () => {
+  drawPreview();
+  const dfaPage = document.getElementById('dfa-page');
+  if (dfaPage && dfaPage.style.display !== 'none' && _dfaAnimState) {
+    const canvas = document.getElementById('dfa-canvas');
+    const wrap   = canvas.parentElement;
+    canvas.width  = wrap.clientWidth;
+    canvas.height = wrap.clientHeight;
+    _dfaAnimState.ctx = canvas.getContext('2d');
+    dfaRedraw();
+  }
+});
+drawPreview();
+
+// ── Regular Expression Derivation (State Elimination / GNFA) ─────────────────
+
+function deriveRegex(dfa) {
+  const { dfaStates, keys, startKey, dfaAccept, alphabet } = dfa;
+  const steps = [];
+
+  // Work only on reachable non-dead states
+  const liveKeys = keys.filter(k => k !== '∅');
+  if (liveKeys.length === 0) return { regex: '∅', steps };
+
+  // Build GNFA as adjacency map: gnfa[from][to] = regex string | null
+  // States: QSTART (new start), all DFA states, QACCEPT (new accept)
+  const QSTART  = '__QSTART__';
+  const QACCEPT = '__QACCEPT__';
+  const gnfaStates = [QSTART, ...liveKeys, QACCEPT];
+
+  // Helper: union two regex strings, simplifying when possible
+  function union(a, b) {
+    if (a === null || a === '∅') return b;
+    if (b === null || b === '∅') return a;
+    if (a === b) return a;
+    return `(${a}+${b})`;
+  }
+
+  // Helper: concatenate, simplifying ε and ∅
+  function concat(a, b) {
+    if (a === null || a === '∅' || b === null || b === '∅') return '∅';
+    if (a === 'ε') return b;
+    if (b === 'ε') return a;
+    // Wrap in parens only if needed (contains | at top level)
+    const wa = needsParens(a) ? `(${a})` : a;
+    const wb = needsParens(b) ? `(${b})` : b;
+    return wa + wb;
+  }
+
+  // Helper: star
+  function star(a) {
+    if (a === null || a === '∅' || a === 'ε') return 'ε';
+    if (isSingleToken(a)) return `${a}<sup>*</sup>`;
+    return `(${a})<sup>*</sup>`;
+  }
+
+  function needsParens(s) {
+    // Needs parens if it contains a top-level union (|) — simple heuristic
+    let depth = 0;
+    for (const c of s) {
+      if (c === '(') depth++;
+      else if (c === ')') depth--;
+      else if (c === '+' && depth === 0) return true;
+    }
+    return false;
+  }
+
+  function isSingleToken(s) {
+    if (s.length === 1) return true;
+    if (s.startsWith('(') && s.endsWith(')')) {
+      let depth = 0;
+      for (let i = 0; i < s.length; i++) {
+        if (s[i] === '(') depth++;
+        else if (s[i] === ')') depth--;
+        if (depth === 0 && i < s.length - 1) return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // Initialize GNFA
+  const gnfa = {};
+  gnfaStates.forEach(s => { gnfa[s] = {}; gnfaStates.forEach(t => gnfa[s][t] = null); });
+
+  // QSTART → DFA start with ε
+  gnfa[QSTART][startKey] = 'ε';
+
+  // DFA accept states → QACCEPT with ε
+  dfaAccept.filter(k => k !== '∅').forEach(k => { gnfa[k][QACCEPT] = 'ε'; });
+
+  // DFA transitions
+  liveKeys.forEach(k => {
+    alphabet.forEach(sym => {
+      const next = dfaStates[k].trans[sym];
+      if (!next || next === '∅' || !liveKeys.includes(next)) return;
+      gnfa[k][next] = union(gnfa[k][next], sym);
+    });
+  });
+
+  // State elimination — remove states one by one (keep QSTART and QACCEPT)
+  let remaining = [...liveKeys]; // states to eliminate
+
+  while (remaining.length > 0) {
+    // Pick the state to eliminate (pick last for cleaner order)
+    const qrip = remaining.pop();
+
+    const before = [...gnfaStates.filter(s => s !== qrip && remaining.includes(s) || s === QSTART || s === QACCEPT)];
+    const around = before.filter(s => s !== qrip);
+
+    // For every pair (qi, qj) in remaining+bookends, reroute through qrip
+    const bookends = [QSTART, ...remaining, QACCEPT];
+    bookends.forEach(qi => {
+      bookends.forEach(qj => {
+        if (qi === qrip || qj === qrip) return;
+        const r1    = gnfa[qi][qrip];   // qi → qrip
+        const loop  = gnfa[qrip][qrip]; // qrip self-loop
+        const r2    = gnfa[qrip][qj];   // qrip → qj
+        const r3    = gnfa[qi][qj];     // existing qi → qj
+
+        if (r1 === null || r2 === null) return; // no path through qrip
+
+        const loopPart = loop !== null ? star(loop) : 'ε';
+        const newPath  = concat(concat(r1, loopPart), r2);
+        gnfa[qi][qj]   = union(r3, newPath);
+      });
+    });
+
+    const label = `Eliminated state {${qrip}}: ` + (gnfa[QSTART][QACCEPT] !== null ? gnfa[QSTART][QACCEPT] : '∅');
+    steps.push(label);
+  }
+
+  const result = gnfa[QSTART][QACCEPT] || '∅';
+  return { regex: result, steps };
+}
+
+function showRegex(dfa) {
+  const { regex, steps } = deriveRegex(dfa);
+  const section = document.getElementById('regex-section');
+  const textEl  = document.getElementById('regex-text');
+  const stepsEl = document.getElementById('regex-steps');
+
+  textEl.innerHTML   = regex;
+  stepsEl.innerHTML  = steps.map((s, i) =>
+    `<div class="regex-step-item"><span class="rsi-label">Step ${i+1}.</span><span class="rsi-expr">${s}</span></div>`
+  ).join('');
+
+  section.style.display = 'block';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function copyRegex() {
+  const txt = document.getElementById('regex-text').textContent;
+  navigator.clipboard.writeText(txt).catch(() => {});
+  const btn = document.querySelector('.regex-copy-btn');
+  btn.textContent = 'Copied!';
+  setTimeout(() => btn.textContent = 'Copy', 1500);
+}
+</script>
+</body>
+</html>
