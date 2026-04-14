@@ -606,6 +606,172 @@
 
   /* Superscript formatting */
   sup { font-size: 0.6em; vertical-align: top; color: var(--accent); }
+
+  /* ══════════════════════════════════════════════
+     RESPONSIVE — Tablet (≤ 900px)
+  ══════════════════════════════════════════════ */
+  @media (max-width: 900px) {
+    body { height: auto; min-height: 100vh; overflow: auto; }
+
+    .topbar { padding: 12px 20px; gap: 8px; }
+    .logo   { font-size: 11px; }
+
+    /* Shrink step labels to numbers-only on tablet */
+    .step-dot { padding: 0 10px; font-size: 9px; gap: 6px; }
+    .step-dot .label { display: none; }
+
+    /* Two-column layout → single column */
+    .main, .dfa-page {
+      grid-template-columns: 1fr !important;
+      overflow: visible;
+    }
+
+    /* Left panel: don't lock height */
+    .left, .dfa-left {
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      overflow: visible;
+    }
+
+    .step-area  { padding: 24px 20px; overflow: visible; }
+    .dfa-scroll { padding: 16px 20px; }
+    .nav-bar    { padding: 16px 20px; }
+
+    /* Right canvas panel: fixed height on tablet */
+    .right {
+      height: 320px;
+      flex-shrink: 0;
+    }
+
+    .dfa-right { height: 360px; flex-shrink: 0; }
+
+    .info-panel   { padding: 12px 20px; }
+    .trans-preview{ padding: 10px 20px; }
+
+    .right-header,
+    .dfa-right-header,
+    .dfa-left-header { padding: 14px 20px 12px; }
+
+    .dfa-popup { padding: 32px 28px; }
+  }
+
+  /* ══════════════════════════════════════════════
+     RESPONSIVE — Phone (≤ 600px)
+  ══════════════════════════════════════════════ */
+  @media (max-width: 600px) {
+    body { overflow: auto; height: auto; min-height: 100vh; }
+
+    /* ── Topbar ── */
+    .topbar {
+      padding: 10px 14px;
+      flex-wrap: wrap;
+      gap: 6px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo { font-size: 10px; letter-spacing: 0.5px; flex: 1; }
+
+    /* Step counter pill replaces the detailed nav on phone */
+    .steps-nav { display: none; }
+
+    #step-counter-wrapper {
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1px;
+      white-space: nowrap;
+    }
+
+    /* ── Progress ── */
+    .progress-line { flex-shrink: 0; }
+
+    /* ── Main grid: single column ── */
+    .main, .dfa-page {
+      grid-template-columns: 1fr !important;
+      overflow: visible;
+    }
+
+    /* ── Left panel ── */
+    .left, .dfa-left {
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      overflow: visible;
+      min-height: 0;
+    }
+
+    .step-area {
+      padding: 20px 14px;
+      overflow: visible;
+    }
+
+    .step-question { font-size: 15px; }
+    .step-desc     { font-size: 11px; margin-bottom: 20px; }
+
+    /* Input row: stack on very small screens */
+    .input-row { flex-wrap: wrap; gap: 8px; }
+    .input-row .add-btn { width: 100%; padding: 12px; text-align: center; }
+
+    /* ── Nav bar ── */
+    .nav-bar {
+      padding: 12px 14px;
+      position: sticky;
+      bottom: 0;
+      z-index: 50;
+      background: rgba(13,14,26,0.95);
+      backdrop-filter: blur(20px);
+    }
+
+    .nav-back { padding: 10px 14px; font-size: 10px; }
+    .nav-next { padding: 10px 18px; font-size: 10px; }
+
+    /* ── Right canvas preview: compact on phone ── */
+    .right {
+      height: 260px;
+      flex-shrink: 0;
+      display: flex;
+    }
+
+    .right-header  { padding: 10px 14px; font-size: 9px; }
+    .info-panel    { padding: 10px 14px; gap: 14px; flex-wrap: wrap; }
+    .trans-preview { padding: 8px 14px; max-height: 120px; }
+
+    /* ── DFA page ── */
+    .dfa-right       { height: 300px; flex-shrink: 0; }
+    .dfa-left-header { padding: 12px 14px; }
+    .dfa-scroll      { padding: 14px 14px; }
+    .dfa-right-header{ padding: 12px 14px; }
+
+    /* ── Tables: allow horizontal scroll ── */
+    .ttable-wrap,
+    .dfa-table-wrap,
+    .nfa-ref-wrap  { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* ── Popup: full-width on phone ── */
+    .dfa-popup {
+      padding: 28px 18px;
+      max-width: calc(100vw - 32px);
+      border-radius: 16px;
+    }
+
+    .dfa-popup-title { font-size: 18px; }
+    .dfa-popup-sub   { font-size: 12px; margin-bottom: 20px; }
+    .dfa-popup-icon  { font-size: 44px; }
+
+    /* ── State selector grid: bigger touch targets ── */
+    .state-select-grid { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 8px; }
+    .state-pick { padding: 12px 6px; font-size: 13px; }
+
+    /* ── Chips: slightly bigger ── */
+    .chip { font-size: 12px; padding: 6px 10px; }
+
+    /* ── Regex section ── */
+    .regex-section { padding: 14px; }
+    .regex-box     { font-size: 13px; }
+
+    /* ── DFA left panel step details ── */
+    .dfa-section-title { margin-top: 16px; }
+  }
 </style>
 </head>
 <body>
@@ -613,14 +779,14 @@
 <div class="topbar">
   <div class="logo">NFA → DFA Converter</div>
   <div class="steps-nav">
-    <div class="step-dot active" id="nav0"><div class="num">1</div> States</div>
-    <div class="step-dot" id="nav1"><div class="num">2</div> Alphabet</div>
-    <div class="step-dot" id="nav2"><div class="num">3</div> Start</div>
-    <div class="step-dot" id="nav3"><div class="num">4</div> Accept</div>
-    <div class="step-dot" id="nav4"><div class="num">5</div> ε Transitions</div>
-    <div class="step-dot" id="nav5"><div class="num">6</div> Transitions</div>
+    <div class="step-dot active" id="nav0"><div class="num">1</div><span class="label">States</span></div>
+    <div class="step-dot" id="nav1"><div class="num">2</div><span class="label">Alphabet</span></div>
+    <div class="step-dot" id="nav2"><div class="num">3</div><span class="label">Start</span></div>
+    <div class="step-dot" id="nav3"><div class="num">4</div><span class="label">Accept</span></div>
+    <div class="step-dot" id="nav4"><div class="num">5</div><span class="label">ε Transitions</span></div>
+    <div class="step-dot" id="nav5"><div class="num">6</div><span class="label">Transitions</span></div>
   </div>
-  <div style="font-size:10px;color:var(--muted);letter-spacing:1px;">STEP <span id="step-counter">1</span> / 6</div>
+  <div id="step-counter-wrapper" style="font-size:10px;color:var(--muted);letter-spacing:1px;">STEP <span id="step-counter">1</span> / 6</div>
 </div>
 
 <div class="progress-line">
