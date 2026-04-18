@@ -1169,20 +1169,7 @@
     computability, every concept builds a <span data-accent>rigorous mental model</span>
     of how information can be processed, transformed, and constrained.
   </p>
-  <div class="about-meta">
-    <div class="meta-chip" data-chip>
-      <div class="meta-num">5+</div>
-      <div class="meta-label">Core automata models</div>
-    </div>
-    <div class="meta-chip" data-chip>
-      <div class="meta-num">4</div>
-      <div class="meta-label">Chomsky hierarchy levels</div>
-    </div>
-    <div class="meta-chip" data-chip>
-      <div class="meta-num">∞</div>
-      <div class="meta-label">Undecidable problems</div>
-    </div>
-  </div>
+
 </section>
 
 <!-- CLAY TOOLS -->
@@ -1819,13 +1806,12 @@ document.querySelectorAll('a,button,.clay-card').forEach(el=>{
 
 // PILLS
 const topics1=[
-  {t:'Finite Automata',c:'v'},{t:'Regular Expressions',c:'o'},{t:'NFA & DFA',c:'v'},
-  {t:'ε-closures',c:'g'},{t:'Pumping Lemma',c:'y'},{t:'CFG',c:'p'},
+  {t:'NFA & DFA',c:'v'},{t:'Subset Construction',c:'g'},{t:'ε-closures',c:'o'},
+  {t:'ε-NFA',c:'v'},{t:'State Mapping',c:'g'},
 ];
 const topics2=[
-  {t:'Pushdown Automata',c:'o'},{t:'CYK Algorithm',c:'g'},{t:'Turing Machines',c:'v'},
-  {t:'Chomsky Hierarchy',c:'y'},{t:'Decidability',c:'p'},{t:'Halting Problem',c:'o'},
-  {t:"Rice's Theorem",c:'g'},
+  {t:'DFA Minimization',c:'o'},{t:'Myhill-Nerode Theorem',c:'v'},{t:'Table-Filling Algorithm',c:'g'},
+  {t:'Reachability Analysis',c:'y'},{t:'Equivalent States',c:'p'},{t:'Partition Refinement',c:'o'},
 ];
 function makePills(data,id){
   const row=document.getElementById(id);
